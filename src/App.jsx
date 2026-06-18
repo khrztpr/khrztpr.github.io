@@ -186,9 +186,6 @@ function HeadcountDashboardPage({ rawMetricsData, loading }) {
       <header className="bg-white/95 p-7 rounded-[32px] shadow-[0_30px_80px_-45px_rgba(15,23,42,0.18)] border border-slate-200/80 backdrop-blur-xl space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700 shadow-sm ring-1 ring-emerald-200/80">
-              Date range mode
-            </div>
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-slate-900">Operational Headcount Analytics</h1>
               <p className="mt-2 text-sm leading-6 text-slate-500">Select a range and see the dashboard update instantly with KPIs and trends.</p>
@@ -383,11 +380,27 @@ export default function App() {
       const leaves = parseCSV(leavesCsv);
 
       const schedHeaders = schedules[0].reduce((acc, cur, i) => ({ ...acc, [cur.toLowerCase().trim()]: i }), {});
-      const rosterHeaders = roster[0].reduce((acc, cur, i) => ({ ...acc, [cur.toLowerCase().trim()]: i }), {});
+      const rosterHeaders = roster[0].reduce((acc, cur, i) => {
+        const key = String(cur || '').toLowerCase().trim();
+        if (!key || key === 'x') return acc;
+        return { ...acc, [key]: i };
+      }, {});
       const leavesHeaders = leaves[0].reduce((acc, cur, i) => ({ ...acc, [cur.toLowerCase().trim()]: i }), {});
 
       const dateIdx = schedHeaders['date'];
       if (dateIdx === undefined) throw new Error("Header labeled 'Date' was not identified inside Schedules.");
+      const clockInCommentsIdx = schedHeaders['clock in comments'] ?? schedHeaders['notes on clock in'];
+      const shiftLineIdx = schedHeaders['shift line'] ?? schedHeaders['role'];
+      const scheduleAreaIdx = schedules[0].reduce((lastIdx, header, i) => {
+        return String(header || '').toLowerCase().trim() === 'area' ? i : lastIdx;
+      }, -1);
+      if (scheduleAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Schedules.");
+      const rosterDateIdx = rosterHeaders['start date as employee (non-contractor)'] ?? rosterHeaders['start date'] ?? rosterHeaders['date'];
+      if (rosterDateIdx === undefined) throw new Error("Header labeled 'Start date as employee (non-contractor)' was not identified inside Roster.");
+      const rosterEmploymentStatusIdx = rosterHeaders['employment status'];
+      const rosterTypeIdx = rosterHeaders['type'];
+      if (rosterEmploymentStatusIdx === undefined) throw new Error("Header labeled 'Employment status' was not identified inside Roster.");
+      if (rosterTypeIdx === undefined) throw new Error("Header labeled 'Type' was not identified inside Roster.");
       
       const uniqueDates = Array.from(new Set(schedules.slice(1).map(row => row[dateIdx]).filter(Boolean))).sort((a, b) => {
         const da = parseDate(a);
@@ -399,39 +412,46 @@ export default function App() {
       const computedTimeline = uniqueDates.map(targetDate => {
         const targetDateKey = formatAsIsoDate(targetDate) || targetDate;
         const openingFieldHC = schedules.slice(1).filter(row => {
-          return isSameDay(row[schedHeaders['date']], targetDate) &&
-                 !!row[schedHeaders['area']] &&
-                 !row[schedHeaders['notes on clock in']] &&
-                 row[schedHeaders['role']] !== 'Closer';
+          const shiftLine = String(row[shiftLineIdx] || '').trim().toLowerCase();
+          const scheduleArea = String(row[scheduleAreaIdx] || '').trim();
+          const comments = String(row[clockInCommentsIdx] || '').trim();
+          return isSameDay(row[dateIdx], targetDate) &&
+                 scheduleArea !== '' &&
+                 comments === '' &&
+                 shiftLine !== 'closer';
         }).length;
 
         const active = roster.slice(1).filter(row => {
-          return row[rosterHeaders['employment status']] === 'Active' &&
-                 isOnOrBefore(row[rosterHeaders['date']], targetDate);
+          return row[rosterEmploymentStatusIdx] === 'Active' &&
+                 isOnOrBefore(row[rosterDateIdx], targetDate);
         }).length;
 
         const activeFull = roster.slice(1).filter(row => {
-          return row[rosterHeaders['employment status']] === 'Active' &&
-                 row[rosterHeaders['type']] === 'Full Time' &&
-                 isOnOrBefore(row[rosterHeaders['date']], targetDate);
+          return row[rosterEmploymentStatusIdx] === 'Active' &&
+                 row[rosterTypeIdx] === 'Full Time' &&
+                 isOnOrBefore(row[rosterDateIdx], targetDate);
         }).length;
 
         const activePartial = roster.slice(1).filter(row => {
-          return row[rosterHeaders['employment status']] === 'Active' &&
-                 row[rosterHeaders['type']] === 'Part Time' &&
-                 isOnOrBefore(row[rosterHeaders['date']], targetDate);
+          return row[rosterEmploymentStatusIdx] === 'Active' &&
+                 row[rosterTypeIdx] === 'Part Time' &&
+                 isOnOrBefore(row[rosterDateIdx], targetDate);
         }).length;
 
         const scheduled = schedules.slice(1).filter(row => {
-          return isSameDay(row[schedHeaders['date']], targetDate) &&
-                 !!row[schedHeaders['area']] &&
-                 !row[schedHeaders['notes on clock in']];
+          const scheduleArea = String(row[scheduleAreaIdx] || '').trim();
+          const comments = String(row[clockInCommentsIdx] || '').trim();
+          return isSameDay(row[dateIdx], targetDate) &&
+                 scheduleArea !== '' &&
+                 comments === '';
         }).length;
 
         const absentLate = schedules.slice(1).filter(row => {
-          const status = (row[schedHeaders['status']] || '').toLowerCase();
-          return isSameDay(row[schedHeaders['date']], targetDate) &&
-                 !!row[schedHeaders['area']] &&
+          const statusSource = row[schedHeaders['status']] || row[clockInCommentsIdx] || '';
+          const status = String(statusSource).toLowerCase();
+          const scheduleArea = String(row[scheduleAreaIdx] || '').trim();
+          return isSameDay(row[dateIdx], targetDate) &&
+                 scheduleArea !== '' &&
                  (status.includes('absent') || status.includes('late'));
         }).length;
 
