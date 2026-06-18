@@ -11,6 +11,72 @@ const GIDS = {
   Leaves: '618864387'
 };
 
+// Canonical area mapping: raw sheet codes -> normalized display name
+const AREA_MAP = {
+  'SAC SOUTH': 'South Sacramento',
+  'FRESNO': 'Fresno',
+  'SOL/COCO': 'Solano/Contra Costa',
+  'SFO': 'San Francisco',
+  'SCC': 'Santa Clara',
+  'SAC NORTH': 'North Sacramento',
+  'SCC ONLOK': 'Santa Clara',
+  'ALC': 'Alameda',
+  'BLS': 'Ambulance',
+  'SONOMA': 'Solano/Contra Costa',
+  'SF ONLOK': 'San Francisco',
+  'LLC (from sac south)': 'South Sacramento',
+  'SOCAL': 'Riverside',
+  'HQ': 'Headquarters',
+  'ALC ONLOK': 'Alameda',
+  'LLC': 'LLC',
+  'SAN DIEGO': 'San Diego',
+  'SAN NORTH': 'North Sacramento'
+};
+
+// Simple Levenshtein distance for fuzzy matching
+const levenshtein = (a, b) => {
+  const al = a.length, bl = b.length;
+  if (!al) return bl;
+  if (!bl) return al;
+  const dp = Array.from({ length: al + 1 }, () => new Array(bl + 1).fill(0));
+  for (let i = 0; i <= al; i++) dp[i][0] = i;
+  for (let j = 0; j <= bl; j++) dp[0][j] = j;
+  for (let i = 1; i <= al; i++) {
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[al][bl];
+};
+
+// Normalize area using canonical map; fall back to fuzzy match for small typos
+const normalizeArea = (raw) => {
+  if (raw === undefined || raw === null) return '';
+  const key = String(raw || '').trim();
+  if (key === '') return '';
+  const up = key.toUpperCase();
+  if (AREA_MAP[up]) return AREA_MAP[up];
+
+  // try direct match to normalized values
+  for (const v of Object.values(AREA_MAP)) {
+    if (v.toUpperCase() === up) return v;
+  }
+
+  // fuzzy match against AREA_MAP keys
+  let best = { key: null, dist: Infinity };
+  for (const candidate of Object.keys(AREA_MAP)) {
+    const dist = levenshtein(up, candidate.toUpperCase());
+    if (dist < best.dist) best = { key: candidate, dist };
+  }
+  // allow small typos: threshold 2 or 20% of length
+  if (best.key && (best.dist <= 2 || best.dist <= Math.floor(up.length * 0.2))) {
+    return AREA_MAP[best.key];
+  }
+
+  return key;
+};
+
 // --- CORE UTILITY HELPER FUNCTIONS ---
 const parseCSV = (text) => {
   const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
@@ -83,7 +149,7 @@ const offsetDateString = (baseDateStr, daysOffset) => {
 // ==========================================
 // 1. PAGE MODULE: HEADCOUNT DASHBOARD
 // ==========================================
-function HeadcountDashboardPage({ rawMetricsData, loading }) {
+function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selectedArea, onAreaChange }) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -208,6 +274,22 @@ function HeadcountDashboardPage({ rawMetricsData, loading }) {
               {startDate} → {endDate}
             </span>
           )}
+
+          <label className="ml-4 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm">
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Area</span>
+            <select
+              value={selectedArea}
+              onChange={(e) => onAreaChange(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
+            >
+              {areaOptions.map(area => (
+                <option key={area} value={area}>{area}</option>
+              ))}
+            </select>
+          </label>
+          <div className="mt-2 ml-4 text-xs text-slate-500">
+            Area labels are normalized for display (e.g. SAC SOUTH → South Sacramento).
+          </div>
 
           {datePickerOpen && (
             <div ref={datePickerRef} className="absolute left-0 z-20 mt-4 w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5">
@@ -364,6 +446,11 @@ export default function App() {
   const [metricsData, setMetricsData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [scheduleRows, setScheduleRows] = useState([]);
+  const [rosterRows, setRosterRows] = useState([]);
+  const [leaveRows, setLeaveRows] = useState([]);
+  const [areaOptions, setAreaOptions] = useState(['All Areas']);
+  const [selectedArea, setSelectedArea] = useState('All Areas');
 
   useEffect(() => {
     setLoading(true);
@@ -379,30 +466,55 @@ export default function App() {
       const roster = parseCSV(rosterCsv);
       const leaves = parseCSV(leavesCsv);
 
-      const schedHeaders = schedules[0].reduce((acc, cur, i) => ({ ...acc, [cur.toLowerCase().trim()]: i }), {});
-      const rosterHeaders = roster[0].reduce((acc, cur, i) => {
+      const scheduleAreaIdx = schedules[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
+      if (scheduleAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Schedules.");
+      const scheduleAreas = Array.from(new Set(
+        schedules.slice(1)
+          .map(row => normalizeArea(String(row[scheduleAreaIdx] || '').trim()))
+          .filter(Boolean)
+      )).sort((a, b) => a.localeCompare(b));
+
+      setScheduleRows(schedules);
+      setRosterRows(roster);
+      setLeaveRows(leaves);
+      setAreaOptions(['All Areas', ...scheduleAreas]);
+      setLoading(false);
+    })
+    .catch(err => {
+      console.error(err);
+      setError("Data pipeline extraction error. Verify sheet columns match expected headers.");
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!scheduleRows.length || !rosterRows.length || !leaveRows.length) return;
+
+    setLoading(true);
+    try {
+      const schedHeaders = scheduleRows[0].reduce((acc, cur, i) => ({ ...acc, [cur.toLowerCase().trim()]: i }), {});
+      const rosterHeaders = rosterRows[0].reduce((acc, cur, i) => {
         const key = String(cur || '').toLowerCase().trim();
         if (!key || key === 'x') return acc;
         return { ...acc, [key]: i };
       }, {});
-      const leavesHeaders = leaves[0].reduce((acc, cur, i) => ({ ...acc, [cur.toLowerCase().trim()]: i }), {});
+      const leavesHeaders = leaveRows[0].reduce((acc, cur, i) => ({ ...acc, [cur.toLowerCase().trim()]: i }), {});
 
       const dateIdx = schedHeaders['date'];
       if (dateIdx === undefined) throw new Error("Header labeled 'Date' was not identified inside Schedules.");
       const clockInCommentsIdx = schedHeaders['clock in comments'] ?? schedHeaders['notes on clock in'];
       const shiftLineIdx = schedHeaders['shift line'] ?? schedHeaders['role'];
-      const scheduleAreaIdx = schedules[0].reduce((lastIdx, header, i) => {
-        return String(header || '').toLowerCase().trim() === 'area' ? i : lastIdx;
-      }, -1);
+      const scheduleAreaIdx = scheduleRows[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
       if (scheduleAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Schedules.");
       const rosterDateIdx = rosterHeaders['start date as employee (non-contractor)'] ?? rosterHeaders['start date'] ?? rosterHeaders['date'];
       if (rosterDateIdx === undefined) throw new Error("Header labeled 'Start date as employee (non-contractor)' was not identified inside Roster.");
       const rosterEmploymentStatusIdx = rosterHeaders['employment status'];
       const rosterTypeIdx = rosterHeaders['type'];
+      const rosterLocationIdx = rosterHeaders['work location name'] ?? rosterHeaders['work location'];
       if (rosterEmploymentStatusIdx === undefined) throw new Error("Header labeled 'Employment status' was not identified inside Roster.");
       if (rosterTypeIdx === undefined) throw new Error("Header labeled 'Type' was not identified inside Roster.");
-      
-      const uniqueDates = Array.from(new Set(schedules.slice(1).map(row => row[dateIdx]).filter(Boolean))).sort((a, b) => {
+
+      const uniqueDates = Array.from(new Set(scheduleRows.slice(1).map(row => row[dateIdx]).filter(Boolean))).sort((a, b) => {
         const da = parseDate(a);
         const db = parseDate(b);
         if (!da || !db) return a.localeCompare(b);
@@ -410,57 +522,74 @@ export default function App() {
       });
 
       const computedTimeline = uniqueDates.map(targetDate => {
-        const targetDateKey = formatAsIsoDate(targetDate) || targetDate;
-        const openingFieldHC = schedules.slice(1).filter(row => {
-          const shiftLine = String(row[shiftLineIdx] || '').trim().toLowerCase();
-          const scheduleArea = String(row[scheduleAreaIdx] || '').trim();
+          const openingFieldHC = scheduleRows.slice(1).filter(row => {
+            const shiftLine = String(row[shiftLineIdx] || '').trim().toLowerCase();
+            const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
+            const scheduleArea = normalizeArea(scheduleAreaRaw);
+            const comments = String(row[clockInCommentsIdx] || '').trim();
+            return isSameDay(row[dateIdx], targetDate) &&
+                   scheduleArea !== '' &&
+                   comments === '' &&
+                   shiftLine !== 'closer' &&
+                   (selectedArea === 'All Areas' || scheduleArea === selectedArea);
+          }).length;
+
+        const active = rosterRows.slice(1).filter(row => {
+          const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
+          const location = normalizeArea(locationRaw);
+          return row[rosterEmploymentStatusIdx] === 'Active' &&
+                 isOnOrBefore(row[rosterDateIdx], targetDate) &&
+                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || location === selectedArea);
+        }).length;
+
+        const activeFull = rosterRows.slice(1).filter(row => {
+          const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
+          const location = normalizeArea(locationRaw);
+          return row[rosterEmploymentStatusIdx] === 'Active' &&
+                 row[rosterTypeIdx] === 'Full Time' &&
+                 isOnOrBefore(row[rosterDateIdx], targetDate) &&
+                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || location === selectedArea);
+        }).length;
+
+        const activePartial = rosterRows.slice(1).filter(row => {
+          const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
+          const location = normalizeArea(locationRaw);
+          return row[rosterEmploymentStatusIdx] === 'Active' &&
+                 row[rosterTypeIdx] === 'Part Time' &&
+                 isOnOrBefore(row[rosterDateIdx], targetDate) &&
+                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || location === selectedArea);
+        }).length;
+
+        const scheduled = scheduleRows.slice(1).filter(row => {
+          const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
+          const scheduleArea = normalizeArea(scheduleAreaRaw);
           const comments = String(row[clockInCommentsIdx] || '').trim();
           return isSameDay(row[dateIdx], targetDate) &&
                  scheduleArea !== '' &&
                  comments === '' &&
-                 shiftLine !== 'closer';
+                 (selectedArea === 'All Areas' || scheduleArea === selectedArea);
         }).length;
 
-        const active = roster.slice(1).filter(row => {
-          return row[rosterEmploymentStatusIdx] === 'Active' &&
-                 isOnOrBefore(row[rosterDateIdx], targetDate);
-        }).length;
-
-        const activeFull = roster.slice(1).filter(row => {
-          return row[rosterEmploymentStatusIdx] === 'Active' &&
-                 row[rosterTypeIdx] === 'Full Time' &&
-                 isOnOrBefore(row[rosterDateIdx], targetDate);
-        }).length;
-
-        const activePartial = roster.slice(1).filter(row => {
-          return row[rosterEmploymentStatusIdx] === 'Active' &&
-                 row[rosterTypeIdx] === 'Part Time' &&
-                 isOnOrBefore(row[rosterDateIdx], targetDate);
-        }).length;
-
-        const scheduled = schedules.slice(1).filter(row => {
-          const scheduleArea = String(row[scheduleAreaIdx] || '').trim();
-          const comments = String(row[clockInCommentsIdx] || '').trim();
-          return isSameDay(row[dateIdx], targetDate) &&
-                 scheduleArea !== '' &&
-                 comments === '';
-        }).length;
-
-        const absentLate = schedules.slice(1).filter(row => {
+        const absentLate = scheduleRows.slice(1).filter(row => {
           const statusSource = row[schedHeaders['status']] || row[clockInCommentsIdx] || '';
           const status = String(statusSource).toLowerCase();
-          const scheduleArea = String(row[scheduleAreaIdx] || '').trim();
+          const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
+          const scheduleArea = normalizeArea(scheduleAreaRaw);
           return isSameDay(row[dateIdx], targetDate) &&
                  scheduleArea !== '' &&
+                 (selectedArea === 'All Areas' || scheduleArea === selectedArea) &&
                  (status.includes('absent') || status.includes('late'));
         }).length;
 
-        const plannedLeave = leaves.slice(1).filter(row => {
+        const plannedLeave = leaveRows.slice(1).filter(row => {
           const val = row[leavesHeaders['value']];
+          const leaveAreaRaw = String(row[leavesHeaders['area']] || '').trim();
+          const leaveArea = normalizeArea(leaveAreaRaw);
           return isSameDay(row[leavesHeaders['date']], targetDate) &&
-                 !!row[leavesHeaders['area']] &&
+                 leaveArea !== '' &&
                  val !== '0' &&
-                 val !== '';
+                 val !== '' &&
+                 (selectedArea === 'All Areas' || leaveArea === selectedArea);
         }).length;
 
         const inShrinkage = 0;
@@ -482,18 +611,17 @@ export default function App() {
 
       setMetricsData(computedTimeline);
       setLoading(false);
-    })
-    .catch(err => {
+    } catch (err) {
       console.error(err);
       setError("Data pipeline calculation error. Verify columns inside sub-sheets perfectly match expected formula criteria terms.");
       setLoading(false);
-    });
-  }, []);
+    }
+  }, [scheduleRows, rosterRows, leaveRows, selectedArea]);
 
   const renderView = () => {
     switch (currentPage) {
       case 'headcount':
-        return <HeadcountDashboardPage rawMetricsData={metricsData} loading={loading} />;
+        return <HeadcountDashboardPage rawMetricsData={metricsData} loading={loading} areaOptions={areaOptions} selectedArea={selectedArea} onAreaChange={setSelectedArea} />;
       case 'vehicles':
         return <VehiclesPage />;
       case 'settings':
