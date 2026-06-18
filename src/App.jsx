@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { LayoutDashboard, Users, ClipboardList, Clock, AlertTriangle, Calendar, Loader2, AlertCircle, Car, Settings, Layers } from 'lucide-react';
 
@@ -19,8 +19,28 @@ const parseCSV = (text) => {
 
 const parseDate = (value) => {
   if (!value) return null;
-  const parsed = new Date(value);
+  const trimmed = String(value).trim();
+  let parsed;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    parsed = new Date(trimmed);
+  } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
+    const [a, b, c] = trimmed.split('/').map(Number);
+    if (a > 12) {
+      parsed = new Date(c, b - 1, a);
+    } else {
+      parsed = new Date(c, a - 1, b);
+    }
+  } else {
+    parsed = new Date(trimmed);
+  }
+
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatAsIsoDate = (value) => {
+  const date = parseDate(value);
+  return date ? date.toISOString().split('T')[0] : '';
 };
 
 const isSameDay = (value, target) => {
@@ -66,6 +86,7 @@ const offsetDateString = (baseDateStr, daysOffset) => {
 function HeadcountDashboardPage({ rawMetricsData, loading }) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [chartData, setChartData] = useState([]);
   const [kpis, setKpis] = useState({
     openingFieldHC: 0,
@@ -79,11 +100,29 @@ function HeadcountDashboardPage({ rawMetricsData, loading }) {
     outShrinkage: 0
   });
 
+  const datePickerRef = useRef(null);
   const todayIso = new Date().toISOString().split('T')[0];
   const clampToMaxDate = (value) => {
     if (!value) return '';
     return value > todayIso ? todayIso : value;
   };
+
+  useEffect(() => {
+    if (startDate && endDate && startDate > endDate) {
+      setEndDate(startDate);
+    }
+  }, [startDate, endDate]);
+
+  useEffect(() => {
+    const onDocumentClick = (event) => {
+      if (datePickerOpen && datePickerRef.current && !datePickerRef.current.contains(event.target)) {
+        setDatePickerOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', onDocumentClick);
+    return () => document.removeEventListener('mousedown', onDocumentClick);
+  }, [datePickerOpen]);
 
   // Set initial default dates when raw data lands
   useEffect(() => {
@@ -144,37 +183,76 @@ function HeadcountDashboardPage({ rawMetricsData, loading }) {
     <div className="space-y-6">
       
       {/* HEADER & COMPACT INTERACTIVE DATE SELECTOR PANEL */}
-      <header className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Operational Headcount Analytics</h1>
-            <p className="text-slate-500 text-sm">Interactive control matrix showing KPIs calculated specifically for selected dates.</p>
+      <header className="bg-white/95 p-7 rounded-[32px] shadow-[0_30px_80px_-45px_rgba(15,23,42,0.18)] border border-slate-200/80 backdrop-blur-xl space-y-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700 shadow-sm ring-1 ring-emerald-200/80">
+              Date range mode
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">Operational Headcount Analytics</h1>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Select a range and see the dashboard update instantly with KPIs and trends.</p>
+            </div>
           </div>
         </div>
 
         {/* DATE RANGE SELECTOR */}
-        <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-slate-100 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 font-medium flex items-center gap-1"><Calendar size={16}/> From</span>
-            <input 
-              type="date" 
-              value={startDate}
-              max={todayIso}
-              onChange={(e) => setStartDate(clampToMaxDate(e.target.value))}
-              className="border border-slate-200 bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-xs"
-            />
-          </div>
+        <div className="relative pt-2 border-t border-slate-200 text-sm">
+          <button
+            type="button"
+            onClick={() => setDatePickerOpen((open) => !open)}
+            className="inline-flex items-center gap-3 rounded-[28px] border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-5 py-3 text-slate-900 shadow-[0_15px_35px_-20px_rgba(15,23,42,0.35)] transition duration-200 hover:shadow-[0_20px_45px_-25px_rgba(15,23,42,0.35)] focus:outline-none focus:ring-2 focus:ring-emerald-400"
+          >
+            <Calendar size={18} />
+            <span className="text-sm font-medium">Select date range</span>
+          </button>
+          {startDate && endDate && (
+            <span className="ml-3 inline-flex items-center rounded-full bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-200">
+              {startDate} → {endDate}
+            </span>
+          )}
 
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 font-medium">To</span>
-            <input 
-              type="date" 
-              value={endDate}
-              max={todayIso}
-              onChange={(e) => setEndDate(clampToMaxDate(e.target.value))}
-              className="border border-slate-200 bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-xs"
-            />
-          </div>
+          {datePickerOpen && (
+            <div ref={datePickerRef} className="absolute left-0 z-20 mt-4 w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5">
+              <div className="grid gap-4">
+                <label className="space-y-2 text-xs text-slate-500">
+                  From
+                  <input
+                    type="date"
+                    value={startDate}
+                    max={todayIso}
+                    onChange={(e) => {
+                      const nextStart = clampToMaxDate(e.target.value);
+                      setStartDate(nextStart);
+                      if (!endDate) setEndDate(nextStart);
+                    }}
+                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
+                  />
+                </label>
+                <label className="space-y-2 text-xs text-slate-500">
+                  To
+                  <input
+                    type="date"
+                    value={endDate}
+                    max={todayIso}
+                    onChange={(e) => {
+                      const nextEnd = clampToMaxDate(e.target.value);
+                      setEndDate(nextEnd);
+                      if (!startDate) setStartDate(nextEnd);
+                    }}
+                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setDatePickerOpen(false)}
+                  className="mt-1 inline-flex justify-center rounded-3xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
@@ -319,6 +397,7 @@ export default function App() {
       });
 
       const computedTimeline = uniqueDates.map(targetDate => {
+        const targetDateKey = formatAsIsoDate(targetDate) || targetDate;
         const openingFieldHC = schedules.slice(1).filter(row => {
           return isSameDay(row[schedHeaders['date']], targetDate) &&
                  !!row[schedHeaders['area']] &&
