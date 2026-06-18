@@ -27,11 +27,10 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24 # Updated to Node 24 to fix the deprecation warning
-          cache: 'npm'
+          node-version: 24 # Uses the updated 2026 standard runner environment
 
       - name: Install Dependencies
-        run: npm install # Changed from 'npm ci' to fix the missing lockfile error
+        run: npm install # Bypasses the strict requirement for a lockfile
 
       - name: Build Dashboard (Vite + Tailwind)
         run: npm run build
