@@ -17,13 +17,35 @@ const parseCSV = (text) => {
   return lines.map(line => line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim()));
 };
 
+const parseDate = (value) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isSameDay = (value, target) => {
+  const dateValue = parseDate(value);
+  const dateTarget = parseDate(target);
+  if (!dateValue || !dateTarget) return false;
+  return dateValue.getFullYear() === dateTarget.getFullYear()
+    && dateValue.getMonth() === dateTarget.getMonth()
+    && dateValue.getDate() === dateTarget.getDate();
+};
+
+const isOnOrBefore = (value, target) => {
+  const dateValue = parseDate(value);
+  const dateTarget = parseDate(target);
+  return dateValue && dateTarget ? dateValue <= dateTarget : false;
+};
+
 // Helper to check if a target date string falls inside a calendar range inclusively
 const isDateInRange = (dateStr, startStr, endStr) => {
   if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const start = startStr ? new Date(startStr) : null;
-  const end = endStr ? new Date(endStr) : null;
+  const d = parseDate(dateStr);
+  const start = startStr ? parseDate(startStr) : null;
+  const end = endStr ? parseDate(endStr) : null;
   
+  if (!d) return false;
   if (start && d < start) return false;
   if (end && d > end) return false;
   return true;
@@ -42,7 +64,6 @@ const offsetDateString = (baseDateStr, daysOffset) => {
 // 1. PAGE MODULE: HEADCOUNT DASHBOARD
 // ==========================================
 function HeadcountDashboardPage({ rawMetricsData, loading }) {
-  const [rangeMode, setRangeMode] = useState('single'); // Options: 'single', 'weekly', 'custom'
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [chartData, setChartData] = useState([]);
@@ -58,26 +79,21 @@ function HeadcountDashboardPage({ rawMetricsData, loading }) {
     outShrinkage: 0
   });
 
+  const todayIso = new Date().toISOString().split('T')[0];
+  const clampToMaxDate = (value) => {
+    if (!value) return '';
+    return value > todayIso ? todayIso : value;
+  };
+
   // Set initial default dates when raw data lands
   useEffect(() => {
     if (rawMetricsData && rawMetricsData.length > 0) {
       const latestAvailableDate = rawMetricsData[rawMetricsData.length - 1].name;
-      setStartDate(latestAvailableDate);
-      setEndDate(latestAvailableDate);
+      const initialDate = latestAvailableDate > todayIso ? todayIso : latestAvailableDate;
+      setStartDate(initialDate);
+      setEndDate(initialDate);
     }
-  }, [rawMetricsData]);
-
-  // Adjust input configurations dynamically based on Range Mode selected
-  useEffect(() => {
-    if (!startDate || rawMetricsData.length === 0) return;
-
-    if (rangeMode === 'single') {
-      setEndDate(startDate);
-    } else if (rangeMode === 'weekly') {
-      // Set to a clean 7-day period span starting from the selected date
-      setEndDate(offsetDateString(startDate, 6));
-    }
-  }, [rangeMode, startDate]);
+  }, [rawMetricsData, todayIso]);
 
   // Filter trend lines and compute absolute metrics relative to the current selected date range
   useEffect(() => {
@@ -122,7 +138,7 @@ function HeadcountDashboardPage({ rawMetricsData, loading }) {
       outShrinkage: totalScheduled > 0 ? Number(((totalAbsent + totalLeave) / totalScheduled * 100).toFixed(1)) : 0
     });
 
-  }, [startDate, endDate, rangeMode, rawMetricsData]);
+  }, [startDate, endDate, rawMetricsData]);
 
   return (
     <div className="space-y-6">
@@ -134,59 +150,31 @@ function HeadcountDashboardPage({ rawMetricsData, loading }) {
             <h1 className="text-2xl font-bold text-slate-800">Operational Headcount Analytics</h1>
             <p className="text-slate-500 text-sm">Interactive control matrix showing KPIs calculated specifically for selected dates.</p>
           </div>
-
-          {/* INTERVAL SELECTOR BUTTONS */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 self-start">
-            <button
-              onClick={() => setRangeMode('single')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${rangeMode === 'single' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              Single Day
-            </button>
-            <button
-              onClick={() => setRangeMode('weekly')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${rangeMode === 'weekly' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              7-Day Range
-            </button>
-            <button
-              onClick={() => setRangeMode('custom')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${rangeMode === 'custom' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              Custom Range
-            </button>
-          </div>
         </div>
 
-        {/* INPUT CALENDAR DATES */}
+        {/* DATE RANGE SELECTOR */}
         <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-slate-100 text-sm">
           <div className="flex items-center gap-2">
-            <span className="text-slate-400 font-medium flex items-center gap-1"><Calendar size={16}/> {rangeMode === 'custom' ? 'Start Date:' : 'Target Date:'}</span>
+            <span className="text-slate-400 font-medium flex items-center gap-1"><Calendar size={16}/> From</span>
             <input 
               type="date" 
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              max={todayIso}
+              onChange={(e) => setStartDate(clampToMaxDate(e.target.value))}
               className="border border-slate-200 bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-xs"
             />
           </div>
 
-          {rangeMode === 'custom' && (
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 font-medium">End Date:</span>
-              <input 
-                type="date" 
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="border border-slate-200 bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-xs"
-              />
-            </div>
-          )}
-
-          {rangeMode === 'weekly' && endDate && (
-            <div className="text-xs text-slate-400 font-medium bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-              Auto-calculating timeframe span through: <strong className="text-slate-700">{endDate}</strong>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 font-medium">To</span>
+            <input 
+              type="date" 
+              value={endDate}
+              max={todayIso}
+              onChange={(e) => setEndDate(clampToMaxDate(e.target.value))}
+              className="border border-slate-200 bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-xs"
+            />
+          </div>
         </div>
       </header>
 
@@ -323,33 +311,57 @@ export default function App() {
       const dateIdx = schedHeaders['date'];
       if (dateIdx === undefined) throw new Error("Header labeled 'Date' was not identified inside Schedules.");
       
-      const uniqueDates = Array.from(new Set(schedules.slice(1).map(row => row[dateIdx]).filter(Boolean))).sort();
+      const uniqueDates = Array.from(new Set(schedules.slice(1).map(row => row[dateIdx]).filter(Boolean))).sort((a, b) => {
+        const da = parseDate(a);
+        const db = parseDate(b);
+        if (!da || !db) return a.localeCompare(b);
+        return da - db;
+      });
 
       const computedTimeline = uniqueDates.map(targetDate => {
-        
         const openingFieldHC = schedules.slice(1).filter(row => {
-          return row[schedHeaders['date']] === targetDate && 
-                 !!row[schedHeaders['area']] && 
-                 !row[schedHeaders['notes on clock in']] && 
+          return isSameDay(row[schedHeaders['date']], targetDate) &&
+                 !!row[schedHeaders['area']] &&
+                 !row[schedHeaders['notes on clock in']] &&
                  row[schedHeaders['role']] !== 'Closer';
         }).length;
 
-        const active = roster.slice(1).filter(row => row[rosterHeaders['employment status']] === 'Active').length;
-        const activeFull = roster.slice(1).filter(row => row[rosterHeaders['employment status']] === 'Active' && row[rosterHeaders['type']] === 'Full Time').length;
-        const activePartial = roster.slice(1).filter(row => row[rosterHeaders['employment status']] === 'Active' && row[rosterHeaders['type']] === 'Part Time').length;
+        const active = roster.slice(1).filter(row => {
+          return row[rosterHeaders['employment status']] === 'Active' &&
+                 isOnOrBefore(row[rosterHeaders['date']], targetDate);
+        }).length;
+
+        const activeFull = roster.slice(1).filter(row => {
+          return row[rosterHeaders['employment status']] === 'Active' &&
+                 row[rosterHeaders['type']] === 'Full Time' &&
+                 isOnOrBefore(row[rosterHeaders['date']], targetDate);
+        }).length;
+
+        const activePartial = roster.slice(1).filter(row => {
+          return row[rosterHeaders['employment status']] === 'Active' &&
+                 row[rosterHeaders['type']] === 'Part Time' &&
+                 isOnOrBefore(row[rosterHeaders['date']], targetDate);
+        }).length;
 
         const scheduled = schedules.slice(1).filter(row => {
-          return row[schedHeaders['date']] === targetDate && !!row[schedHeaders['area']] && !row[schedHeaders['notes on clock in']];
+          return isSameDay(row[schedHeaders['date']], targetDate) &&
+                 !!row[schedHeaders['area']] &&
+                 !row[schedHeaders['notes on clock in']];
         }).length;
 
         const absentLate = schedules.slice(1).filter(row => {
           const status = (row[schedHeaders['status']] || '').toLowerCase();
-          return row[schedHeaders['date']] === targetDate && !!row[schedHeaders['area']] && (status.includes('absent') || status.includes('late'));
+          return isSameDay(row[schedHeaders['date']], targetDate) &&
+                 !!row[schedHeaders['area']] &&
+                 (status.includes('absent') || status.includes('late'));
         }).length;
 
         const plannedLeave = leaves.slice(1).filter(row => {
           const val = row[leavesHeaders['value']];
-          return row[leavesHeaders['date']] === targetDate && !!row[leavesHeaders['area']] && val !== '0' && val !== '';
+          return isSameDay(row[leavesHeaders['date']], targetDate) &&
+                 !!row[leavesHeaders['area']] &&
+                 val !== '0' &&
+                 val !== '';
         }).length;
 
         const inShrinkage = 0;
