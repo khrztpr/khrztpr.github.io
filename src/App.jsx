@@ -25,7 +25,7 @@ const AREA_MAP = {
   'SAC NORTH': 'North Sacramento',
   'SCC ONLOK': 'Santa Clara',
   'ALC': 'Alameda',
-  'BLS': 'Ambulance',
+  'BLS': 'BLS',
   'SONOMA': 'Solano/Contra Costa',
   'SF ONLOK': 'San Francisco',
   'LLC (from sac south)': 'South Sacramento',
@@ -327,10 +327,6 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
               ))}
             </select>
           </label>
-          <div className="mt-2 ml-4 text-xs text-slate-500" title={AREA_MAP_TOOLTIP}>
-            Area labels are normalized for display (hover to see mappings).
-          </div>
-
           {datePickerOpen && (
             <div ref={datePickerRef} className="absolute left-0 z-20 mt-4 w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5">
               <div className="grid gap-4">
@@ -758,12 +754,11 @@ export default function App() {
       {/* SIDEBAR COMPONENT */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
         <div className="p-5 rounded-b-3xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-950 border-b border-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 mb-2">AMW Analytical Dashboard</div>
           <div className="flex items-center gap-3">
             <Layers className="text-emerald-400" size={24} />
             <div>
-              <div className="text-lg font-semibold text-white">AMW Analytics</div>
-              <div className="text-sm text-slate-400">Operational insight hub</div>
+              <div className="text-lg font-semibold text-white">AMW DASHBOARD</div>
+              <div className="text-sm text-slate-400">Operational Insights</div>
             </div>
           </div>
         </div>
@@ -782,14 +777,14 @@ export default function App() {
             onClick={() => setCurrentPage('vehicles')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'vehicles' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
-            <Car size={18} /> Fleet Log (554899)
+            <Car size={18} /> Fleet Utilization
           </button>
 
           <button
             onClick={() => setCurrentPage('settings')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'settings' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
-            <Settings size={18} /> Engine Rules Settings
+            <Settings size={18} /> Settings
           </button>
         </nav>
         <div className="mt-auto p-4 border-t border-slate-800">
