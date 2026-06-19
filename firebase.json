@@ -10,6 +10,7 @@
     ]
   },
   "hosting": {
+    "site": "test-46743",
     "public": "dist",
     "ignore": [
       "firebase.json",
