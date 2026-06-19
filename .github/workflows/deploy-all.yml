@@ -26,7 +26,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20' # Upgraded to Node 20 to match Firebase CLI tools
 
       - name: Install Dependencies
         run: npm install
@@ -72,27 +72,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud via Workload Identity
-        uses: google-github-actions/auth@v1
-        with:
-          # fill these placeholders with your configuration
-          workload_identity_provider: projects/test-46743/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-actions-deployer@test-46743.iam.gserviceaccount.com
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
+      # Fix #1: Download the artifact explicitly into a folder named 'dist'
       - name: Download built artifact
         uses: actions/download-artifact@v4
         with:
           name: dist
-
-      - name: Install firebase-tools
-        run: npm install -g firebase-tools
+          path: ./dist
 
       - name: Deploy to Firebase
         run: npx firebase-tools deploy --only hosting,firestore:rules --project test-46743
         env:
-            FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }} # Fix #2: Corrected indentation layout
