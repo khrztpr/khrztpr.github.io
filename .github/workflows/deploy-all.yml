@@ -95,4 +95,4 @@ jobs:
       - name: Deploy to Firebase (functions + hosting + firestore rules)
         run: |
           # artifact extracted into ./dist by download-artifact
-          npx firebase-tools deploy --only functions,hosting,firestore:rules --project YOUR_PROJECT_ID
+          npx firebase-tools deploy --only functions,hosting,firestore:rules --project test-46743

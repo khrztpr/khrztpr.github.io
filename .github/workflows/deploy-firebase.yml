@@ -37,4 +37,4 @@ jobs:
 
       - name: Deploy to Firebase (hosting, functions, firestore rules)
         run: |
-          npx firebase-tools deploy --only hosting,functions,firestore:rules --project YOUR_PROJECT_ID
+          npx firebase-tools deploy --only hosting,functions,firestore:rules --project test-46743
