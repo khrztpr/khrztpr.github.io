@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ShieldCheck, Loader2, CheckCircle2, Mail } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, sendEmailVerification } from "firebase/auth";
@@ -14,10 +14,42 @@ export default function VerifyEmailPage() {
   const [loading, setLoading] = useState(true);
   const [verified, setVerified] = useState(false);
   const [sending, setSending] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const refreshUserVerification = useCallback(async () => {
+    if (!auth.currentUser) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    setLoading(true);
+    setStatus("");
+    try {
+      await auth.currentUser.reload();
+      const ok = !!auth.currentUser.emailVerified;
+      setVerified(ok);
+      if (ok) {
+        toast.success("Email verified! Redirecting to dashboard...");
+        navigate("/dashboard", { replace: true });
+      } else {
+        setStatus("Still waiting on email verification. Check your inbox or resend the link.");
+      }
+    } catch (err) {
+      console.warn("refresh verification error:", err);
+      setStatus("Unable to refresh verification status. Try again in a few seconds.");
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      const ok = !!user?.emailVerified;
+      if (!user) {
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      const ok = !!user.emailVerified;
       setVerified(ok);
       setLoading(false);
       if (ok) navigate("/dashboard", { replace: true });
@@ -27,6 +59,7 @@ export default function VerifyEmailPage() {
 
   async function onResend() {
     setSending(true);
+    setStatus("");
     try {
       if (!auth.currentUser) {
         toast.error("Please sign in again.");
@@ -34,12 +67,13 @@ export default function VerifyEmailPage() {
         return;
       }
 
-      // Firebase will send email verification.
       await sendEmailVerification(auth.currentUser);
       toast.success("Verification email sent.");
+      setStatus("If you still don’t see it, check spam or promotions.");
     } catch (err) {
       console.warn("sendEmailVerification error:", err);
       toast.error("Unable to send verification email. Please try again.");
+      setStatus("If the email still does not arrive, verify your address or try a different account.");
     } finally {
       setSending(false);
     }
@@ -90,16 +124,30 @@ export default function VerifyEmailPage() {
               </div>
 
               {!verified ? (
-                <button
-                  onClick={onResend}
-                  disabled={sending}
-                  className="mt-5 w-full rounded-2xl bg-emerald-500 py-3 text-sm font-semibold text-slate-950 shadow-[0_20px_50px_-30px_rgba(16,185,129,0.65)] transition hover:bg-emerald-400 disabled:opacity-50"
-                >
-                  <span className="inline-flex items-center justify-center gap-2">
-                    {sending ? <Loader2 className="animate-spin" size={16} /> : null}
-                    {sending ? "Resending…" : "Resend verification email"}
-                  </span>
-                </button>
+                <>
+                  <button
+                    onClick={onResend}
+                    disabled={sending}
+                    className="mt-5 w-full rounded-2xl bg-emerald-500 py-3 text-sm font-semibold text-slate-950 shadow-[0_20px_50px_-30px_rgba(16,185,129,0.65)] transition hover:bg-emerald-400 disabled:opacity-50"
+                  >
+                    <span className="inline-flex items-center justify-center gap-2">
+                      {sending ? <Loader2 className="animate-spin" size={16} /> : null}
+                      {sending ? "Resending…" : "Resend verification email"}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={refreshUserVerification}
+                    className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-900/70 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    I already verified my email
+                  </button>
+                </>
+              ) : null}
+
+              {status ? (
+                <p className="mt-4 text-xs text-slate-300">{status}</p>
               ) : null}
             </div>
 
