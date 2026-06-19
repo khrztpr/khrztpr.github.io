@@ -33,6 +33,9 @@ const AREA_MAP = {
   'SAN NORTH': 'North Sacramento'
 };
 
+// Tooltip-friendly mapping string for UI hints
+const AREA_MAP_TOOLTIP = Object.entries(AREA_MAP).map(([k, v]) => `${k} → ${v}`).join('; ');
+
 // Simple Levenshtein distance for fuzzy matching
 const levenshtein = (a, b) => {
   const al = a.length, bl = b.length;
@@ -55,12 +58,23 @@ const normalizeArea = (raw) => {
   if (raw === undefined || raw === null) return '';
   const key = String(raw || '').trim();
   if (key === '') return '';
+
+  // simple memoization cache to avoid repeated expensive fuzzy computations
+  if (!normalizeArea._cache) normalizeArea._cache = new Map();
+  if (normalizeArea._cache.has(key)) return normalizeArea._cache.get(key);
+
   const up = key.toUpperCase();
-  if (AREA_MAP[up]) return AREA_MAP[up];
+  if (AREA_MAP[up]) {
+    normalizeArea._cache.set(key, AREA_MAP[up]);
+    return AREA_MAP[up];
+  }
 
   // try direct match to normalized values
   for (const v of Object.values(AREA_MAP)) {
-    if (v.toUpperCase() === up) return v;
+    if (v.toUpperCase() === up) {
+      normalizeArea._cache.set(key, v);
+      return v;
+    }
   }
 
   // fuzzy match against AREA_MAP keys
@@ -71,9 +85,12 @@ const normalizeArea = (raw) => {
   }
   // allow small typos: threshold 2 or 20% of length
   if (best.key && (best.dist <= 2 || best.dist <= Math.floor(up.length * 0.2))) {
-    return AREA_MAP[best.key];
+    const mapped = AREA_MAP[best.key];
+    normalizeArea._cache.set(key, mapped);
+    return mapped;
   }
 
+  normalizeArea._cache.set(key, key);
   return key;
 };
 
@@ -89,7 +106,9 @@ const parseDate = (value) => {
   let parsed;
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    parsed = new Date(trimmed);
+    // treat bare YYYY-MM-DD as local date (avoid implicit UTC parsing differences)
+    const [y, m, d] = trimmed.split('-').map(Number);
+    parsed = new Date(y, m - 1, d);
   } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
     const [a, b, c] = trimmed.split('/').map(Number);
     if (a > 12) {
@@ -106,7 +125,11 @@ const parseDate = (value) => {
 
 const formatAsIsoDate = (value) => {
   const date = parseDate(value);
-  return date ? date.toISOString().split('T')[0] : '';
+  if (!date) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 };
 
 const isSameDay = (value, target) => {
@@ -139,10 +162,11 @@ const isDateInRange = (dateStr, startStr, endStr) => {
 
 // Helper to offset dates easily for range selection
 const offsetDateString = (baseDateStr, daysOffset) => {
-  const d = new Date(baseDateStr);
-  if (isNaN(d)) return baseDateStr;
+  const base = parseDate(baseDateStr);
+  if (!base) return baseDateStr;
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
   d.setDate(d.getDate() + daysOffset);
-  return d.toISOString().split('T')[0];
+  return formatAsIsoDate(d);
 };
 
 
@@ -287,8 +311,8 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
               ))}
             </select>
           </label>
-          <div className="mt-2 ml-4 text-xs text-slate-500">
-            Area labels are normalized for display (e.g. SAC SOUTH → South Sacramento).
+          <div className="mt-2 ml-4 text-xs text-slate-500" title={AREA_MAP_TOOLTIP}>
+            Area labels are normalized for display (hover to see mappings).
           </div>
 
           {datePickerOpen && (
@@ -514,7 +538,36 @@ export default function App() {
       if (rosterEmploymentStatusIdx === undefined) throw new Error("Header labeled 'Employment status' was not identified inside Roster.");
       if (rosterTypeIdx === undefined) throw new Error("Header labeled 'Type' was not identified inside Roster.");
 
-      const uniqueDates = Array.from(new Set(scheduleRows.slice(1).map(row => row[dateIdx]).filter(Boolean))).sort((a, b) => {
+      // Preprocess roster and leaves to normalized, lightweight objects to speed up repeated filters
+      const rosterProcessed = rosterRows.slice(1).map(row => {
+        const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
+        const location = normalizeArea(locationRaw);
+        const startIso = formatAsIsoDate(row[rosterDateIdx]);
+        return {
+          location,
+          startIso,
+          employmentStatus: String(row[rosterEmploymentStatusIdx] || '').trim(),
+          type: String(row[rosterTypeIdx] || '').trim()
+        };
+      });
+
+      const leaveProcessed = leaveRows.slice(1).map(row => {
+        const dateIso = formatAsIsoDate(row[leavesHeaders['date']]);
+        const area = normalizeArea(String(row[leavesHeaders['area']] || '').trim());
+        const val = String(row[leavesHeaders['value']] || '').trim();
+        return { dateIso, area, val };
+      });
+
+      // Group schedule rows by ISO date to avoid repeated full-table scans per date
+      const dateToScheduleRows = {};
+      scheduleRows.slice(1).forEach(row => {
+        const iso = formatAsIsoDate(row[dateIdx]);
+        if (!iso) return;
+        if (!dateToScheduleRows[iso]) dateToScheduleRows[iso] = [];
+        dateToScheduleRows[iso].push(row);
+      });
+
+      const uniqueDates = Object.keys(dateToScheduleRows).sort((a, b) => {
         const da = parseDate(a);
         const db = parseDate(b);
         if (!da || !db) return a.localeCompare(b);
@@ -522,7 +575,9 @@ export default function App() {
       });
 
       const computedTimeline = uniqueDates.map(targetDate => {
-          const openingFieldHC = scheduleRows.slice(1).filter(row => {
+          const schedForDate = dateToScheduleRows[targetDate] || [];
+
+          const openingFieldHC = schedForDate.filter(row => {
             const shiftLine = String(row[shiftLineIdx] || '').trim().toLowerCase();
             const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
             const scheduleArea = normalizeArea(scheduleAreaRaw);
@@ -534,30 +589,24 @@ export default function App() {
                    (selectedArea === 'All Areas' || scheduleArea === selectedArea);
           }).length;
 
-        const active = rosterRows.slice(1).filter(row => {
-          const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
-          const location = normalizeArea(locationRaw);
-          return row[rosterEmploymentStatusIdx] === 'Active' &&
-                 isOnOrBefore(row[rosterDateIdx], targetDate) &&
-                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || location === selectedArea);
+        const active = rosterProcessed.filter(r => {
+          return r.employmentStatus === 'Active' &&
+                 isOnOrBefore(r.startIso, targetDate) &&
+                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
         }).length;
 
-        const activeFull = rosterRows.slice(1).filter(row => {
-          const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
-          const location = normalizeArea(locationRaw);
-          return row[rosterEmploymentStatusIdx] === 'Active' &&
-                 row[rosterTypeIdx] === 'Full Time' &&
-                 isOnOrBefore(row[rosterDateIdx], targetDate) &&
-                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || location === selectedArea);
+        const activeFull = rosterProcessed.filter(r => {
+          return r.employmentStatus === 'Active' &&
+                 r.type === 'Full Time' &&
+                 isOnOrBefore(r.startIso, targetDate) &&
+                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
         }).length;
 
-        const activePartial = rosterRows.slice(1).filter(row => {
-          const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
-          const location = normalizeArea(locationRaw);
-          return row[rosterEmploymentStatusIdx] === 'Active' &&
-                 row[rosterTypeIdx] === 'Part Time' &&
-                 isOnOrBefore(row[rosterDateIdx], targetDate) &&
-                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || location === selectedArea);
+        const activePartial = rosterProcessed.filter(r => {
+          return r.employmentStatus === 'Active' &&
+                 r.type === 'Part Time' &&
+                 isOnOrBefore(r.startIso, targetDate) &&
+                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
         }).length;
 
         const scheduled = scheduleRows.slice(1).filter(row => {
@@ -581,15 +630,12 @@ export default function App() {
                  (status.includes('absent') || status.includes('late'));
         }).length;
 
-        const plannedLeave = leaveRows.slice(1).filter(row => {
-          const val = row[leavesHeaders['value']];
-          const leaveAreaRaw = String(row[leavesHeaders['area']] || '').trim();
-          const leaveArea = normalizeArea(leaveAreaRaw);
-          return isSameDay(row[leavesHeaders['date']], targetDate) &&
-                 leaveArea !== '' &&
-                 val !== '0' &&
-                 val !== '' &&
-                 (selectedArea === 'All Areas' || leaveArea === selectedArea);
+        const plannedLeave = leaveProcessed.filter(l => {
+          return l.dateIso === targetDate &&
+                 l.area !== '' &&
+                 l.val !== '0' &&
+                 l.val !== '' &&
+                 (selectedArea === 'All Areas' || l.area === selectedArea);
         }).length;
 
         const inShrinkage = 0;
