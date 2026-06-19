@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, LogOut, Loader2, AlertCircle, Users } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import { toast } from "../ui/toast";
+import { logout } from "../auth/authService";
 
 // Import existing pages (we'll keep current App dashboard logic inside App for now if needed)
 
@@ -17,6 +19,8 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [userRole, setUserRole] = useState("user");
+  const [usersList, setUsersList] = useState([]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -26,6 +30,27 @@ export default function Dashboard() {
     });
     return () => unsub();
   }, [navigate]);
+
+  useEffect(() => {
+    // fetch current user's role from Firestore
+    async function fetchRole() {
+      if (!user) return;
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const data = snap.exists() ? snap.data() : null;
+        setUserRole(data?.role || "user");
+        if (data?.role === "admin") {
+          // load users for admin
+          const q = await getDocs(collection(db, "users"));
+          const arr = q.docs.map(d => ({ id: d.id, ...d.data() }));
+          setUsersList(arr);
+        }
+      } catch (err) {
+        console.warn("failed to get user role:", err);
+      }
+    }
+    fetchRole();
+  }, [user]);
 
   const accountCreated = useMemo(() => {
     if (!user?.metadata?.creationTime) return "";
@@ -39,7 +64,7 @@ export default function Dashboard() {
   async function onLogout() {
     setLoggingOut(true);
     try {
-      await auth.signOut?.();
+      await logout();
     } catch {
       // ignore; signOut is from firebase/auth in authService, but keeping for UI-only.
     }
@@ -108,6 +133,41 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {userRole === "admin" ? (
+          <div className="mt-6 max-w-6xl mx-auto p-4 rounded-2xl border border-white/10 bg-white/5">
+            <h2 className="text-lg font-semibold mb-3">User Management (Admin)</h2>
+            <div className="space-y-3">
+              {usersList.length === 0 ? (
+                <div className="text-sm text-slate-400">No users found.</div>
+              ) : (
+                usersList.map(u => (
+                  <div key={u.id} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <div className="font-medium">{u.email || u.id}</div>
+                      <div className="text-xs text-slate-400">Area: {u.area || '—'}</div>
+                    </div>
+                    <select defaultValue={u.role || 'user'} onChange={async (e) => {
+                      const newRole = e.target.value;
+                      try {
+                        await updateDoc(doc(db, 'users', u.id), { role: newRole });
+                        setUsersList(list => list.map(x => x.id === u.id ? { ...x, role: newRole } : x));
+                        toast.success('Role updated');
+                      } catch (err) {
+                        console.warn('update role failed', err);
+                        toast.error('Unable to update role');
+                      }
+                    }} className="rounded-2xl bg-white/5 border px-3 py-2">
+                      <option value="user">User</option>
+                      <option value="manager">Manager</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -175,7 +175,7 @@ export default function LoginPage() {
                 ) : null}
               </label>
 
-              <PasswordStrengthMeter eval={pwEval} />
+              {/* streamlined: password strength UI removed */}
 
               <label className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -236,38 +236,4 @@ export default function LoginPage() {
 }
 
 
-function PasswordStrengthMeter({ eval: pwEval }) {
-  const { rules, passed } = pwEval;
-  const score =
-    (rules.length ? 1 : 0) +
-    (rules.uppercase ? 1 : 0) +
-    (rules.lowercase ? 1 : 0) +
-    (rules.number ? 1 : 0) +
-    (rules.special ? 1 : 0);
-
-  const pct = (score / 5) * 100;
-  const label = passed ? "Strong password" : score <= 2 ? "Weak password" : "Medium password";
-
-  const color =
-    passed ? "bg-emerald-500" : score <= 2 ? "bg-rose-500" : "bg-amber-500";
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-300">Password strength</span>
-        <span className="text-xs font-medium text-slate-200">{label}</span>
-      </div>
-      <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
-        <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <ul className="text-[11px] text-slate-300 grid grid-cols-2 gap-x-4 gap-y-1">
-        <li className={rules.length ? "text-emerald-200" : "text-slate-400"}>12+ chars</li>
-        <li className={rules.uppercase ? "text-emerald-200" : "text-slate-400"}>Uppercase</li>
-        <li className={rules.lowercase ? "text-emerald-200" : "text-slate-400"}>Lowercase</li>
-        <li className={rules.number ? "text-emerald-200" : "text-slate-400"}>Number</li>
-        <li className={rules.special ? "text-emerald-200" : "text-slate-400"}>Special</li>
-        <li className="text-slate-400">Required mix</li>
-      </ul>
-    </div>
-  );
-}
+// password strength UI removed for a cleaner login experience

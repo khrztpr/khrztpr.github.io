@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.role == 'employee'
+        && request.resource.data.area == null
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if request.auth != null && (
+        (request.auth.uid == userId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.area == resource.data.area
+          && request.resource.data.email == resource.data.email
+        )
+        || getUserData().role == 'admin'
+      );
+      allow delete: if false;
+    }
+
+    match /products/{productId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && getUserData().role == 'admin';
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
