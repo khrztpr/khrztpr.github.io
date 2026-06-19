@@ -6,7 +6,6 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { LayoutDashboard, Users, ClipboardList, Clock, AlertTriangle, Calendar, Loader2, AlertCircle, Car, Settings, Layers, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logout } from './auth/authService';
-import NavBar from './ui/NavBar';
 // --- CONFIGURATION & ENDPOINTS ---
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRexxgM8lPBkDswjt5dR1yFTr07PW_g8X1xew6IddOjj6LkXs6SRkZoh-c6jQjHNvfsMUeY-qMSdRxX/pub?output=csv';
 
@@ -288,8 +287,6 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
 
   return (
     <div className="space-y-6">
-      <NavBar title="Operational Headcount Analytics" />
-      
       {/* HEADER & COMPACT INTERACTIVE DATE SELECTOR PANEL */}
       <header className="bg-white/95 p-7 rounded-[32px] shadow-[0_30px_80px_-45px_rgba(15,23,42,0.18)] border border-slate-200/80 backdrop-blur-xl space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -300,16 +297,6 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onLogout}
-              disabled={loggingOut}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-500/20 disabled:opacity-60"
-            >
-              {loggingOut ? <Loader2 className="animate-spin" size={14} /> : <LogOut size={14} />}
-              <span>{loggingOut ? 'Signing out…' : 'Logout'}</span>
-            </button>
-          </div>
         </div>
 
         {/* DATE RANGE SELECTOR */}
@@ -505,11 +492,15 @@ export default function App() {
   const [leaveRows, setLeaveRows] = useState([]);
   const [areaOptions, setAreaOptions] = useState(['All Areas']);
   const [selectedArea, setSelectedArea] = useState('All Areas');
+  const [currentUserEmail, setCurrentUserEmail] = useState('');
+  const [sidebarLoggingOut, setSidebarLoggingOut] = useState(false);
   const firstComputeRef = useRef(true);
+  const navigate = useNavigate();
 
-  // enforce area restriction for non-admin users
+  // enforce area restriction for non-admin users and keep email for sidebar
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
+      setCurrentUserEmail(u?.email || '');
       if (!u) return;
       try {
         const snap = await getDoc(doc(db, 'users', u.uid));
@@ -527,6 +518,17 @@ export default function App() {
     });
     return () => unsub();
   }, []);
+
+  async function onSidebarLogout() {
+    setSidebarLoggingOut(true);
+    try {
+      await logout();
+    } catch (err) {
+      console.warn('logout failed', err);
+    }
+    setSidebarLoggingOut(false);
+    navigate('/login', { replace: true });
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -755,8 +757,15 @@ export default function App() {
       
       {/* SIDEBAR COMPONENT */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
-        <div className="p-5 text-xl font-bold border-b border-slate-800 tracking-wider flex items-center gap-2">
-          <Layers className="text-emerald-400" size={22} /> MatrixEngine
+        <div className="p-5 rounded-b-3xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-950 border-b border-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 mb-2">AMW Analytical Dashboard</div>
+          <div className="flex items-center gap-3">
+            <Layers className="text-emerald-400" size={24} />
+            <div>
+              <div className="text-lg font-semibold text-white">AMW Analytics</div>
+              <div className="text-sm text-slate-400">Operational insight hub</div>
+            </div>
+          </div>
         </div>
         
         <nav className="flex-1 p-4 space-y-1.5">
@@ -783,7 +792,23 @@ export default function App() {
             <Settings size={18} /> Engine Rules Settings
           </button>
         </nav>
-        <div className="p-4 border-t border-slate-800 text-[11px] text-slate-600 text-center font-medium tracking-wider">v2.1.0 — 2026</div>
+        <div className="mt-auto p-4 border-t border-slate-800">
+          {currentUserEmail ? (
+            <div className="mb-3 rounded-2xl bg-slate-800/80 px-4 py-3 text-sm text-slate-200">
+              <div className="font-semibold text-slate-100">Signed in as</div>
+              <div className="truncate text-slate-300">{currentUserEmail}</div>
+            </div>
+          ) : null}
+          <button
+            onClick={onSidebarLogout}
+            disabled={sidebarLoggingOut}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-700 transition hover:bg-rose-500/20 disabled:opacity-60"
+          >
+            {sidebarLoggingOut ? <Loader2 className="animate-spin" size={14} /> : <LogOut size={14} />}
+            <span>{sidebarLoggingOut ? 'Signing out…' : 'Logout'}</span>
+          </button>
+          <div className="mt-4 text-[11px] text-slate-600 text-center font-medium tracking-wider">v2.1.0 — 2026</div>
+        </div>
       </aside>
 
       {/* MAIN LAYOUT VIEWPORT */}

@@ -6,7 +6,6 @@ import { onAuthStateChanged } from "firebase/auth";
 import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import { toast } from "../ui/toast";
 import { logout } from "../auth/authService";
-import NavBar from "../ui/NavBar";
 
 // Import existing pages (we'll keep current App dashboard logic inside App for now if needed)
 
@@ -90,7 +89,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
-      <NavBar title="Account" />
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
