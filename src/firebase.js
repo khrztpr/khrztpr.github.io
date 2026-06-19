@@ -1,13 +1,8 @@
+// src/firebase.js
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-import { 
-  getAuth, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  sendPasswordResetEmail, 
-  signOut, 
-  onAuthStateChanged 
-} from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyA5wNeyT32d1UFO4jgOVJHTuZiZg0DsTLE",
@@ -20,19 +15,6 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-
-// Export instances to use in App.jsx
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-// Helper authentication wrappers
-export { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  sendPasswordResetEmail, 
-  signOut, 
-  onAuthStateChanged,
-  doc,
-  setDoc,
-  getDoc
-};

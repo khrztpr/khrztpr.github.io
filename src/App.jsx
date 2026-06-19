@@ -1,21 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { LayoutDashboard, Users, ClipboardList, Clock, AlertTriangle, Calendar, Loader2, AlertCircle, Car, Settings, Layers, LogIn, LogOut, UserPlus, Key, Shield } from 'lucide-react';
-
-// Import Firebase Auth & Firestore methods
-import { 
-  auth, 
-  db,
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  sendPasswordResetEmail, 
-  signOut, 
-  onAuthStateChanged,
-  doc,
-  setDoc,
-  getDoc
-} from './firebase';
-
+import { LayoutDashboard, Users, ClipboardList, Clock, AlertTriangle, Calendar, Loader2, AlertCircle, Car, Settings, Layers } from 'lucide-react';
+import { db } from './firebase'; // <-- This pulls the database connection into your dashboard
 // --- CONFIGURATION & ENDPOINTS ---
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRexxgM8lPBkDswjt5dR1yFTr07PW_g8X1xew6IddOjj6LkXs6SRkZoh-c6jQjHNvfsMUeY-qMSdRxX/pub?output=csv';
 
@@ -25,6 +11,7 @@ const GIDS = {
   Leaves: '618864387'
 };
 
+// Canonical area mapping: raw sheet codes -> normalized display name
 const AREA_MAP = {
   'SAC SOUTH': 'South Sacramento',
   'FRESNO': 'Fresno',
@@ -46,6 +33,10 @@ const AREA_MAP = {
   'SAN NORTH': 'North Sacramento'
 };
 
+// Tooltip-friendly mapping string for UI hints
+const AREA_MAP_TOOLTIP = Object.entries(AREA_MAP).map(([k, v]) => `${k} → ${v}`).join('; ');
+
+// Simple Levenshtein distance for fuzzy matching
 const levenshtein = (a, b) => {
   const al = a.length, bl = b.length;
   if (!al) return bl;
@@ -62,11 +53,13 @@ const levenshtein = (a, b) => {
   return dp[al][bl];
 };
 
+// Normalize area using canonical map; fall back to fuzzy match for small typos
 const normalizeArea = (raw) => {
   if (raw === undefined || raw === null) return '';
   const key = String(raw || '').trim();
   if (key === '') return '';
 
+  // simple memoization cache to avoid repeated expensive fuzzy computations
   if (!normalizeArea._cache) normalizeArea._cache = new Map();
   if (normalizeArea._cache.has(key)) return normalizeArea._cache.get(key);
 
@@ -76,6 +69,7 @@ const normalizeArea = (raw) => {
     return AREA_MAP[up];
   }
 
+  // try direct match to normalized values
   for (const v of Object.values(AREA_MAP)) {
     if (v.toUpperCase() === up) {
       normalizeArea._cache.set(key, v);
@@ -83,11 +77,13 @@ const normalizeArea = (raw) => {
     }
   }
 
+  // fuzzy match against AREA_MAP keys
   let best = { key: null, dist: Infinity };
   for (const candidate of Object.keys(AREA_MAP)) {
     const dist = levenshtein(up, candidate.toUpperCase());
     if (dist < best.dist) best = { key: candidate, dist };
   }
+  // allow small typos: threshold 2 or 20% of length
   if (best.key && (best.dist <= 2 || best.dist <= Math.floor(up.length * 0.2))) {
     const mapped = AREA_MAP[best.key];
     normalizeArea._cache.set(key, mapped);
@@ -98,6 +94,7 @@ const normalizeArea = (raw) => {
   return key;
 };
 
+// --- CORE UTILITY HELPER FUNCTIONS ---
 const parseCSV = (text) => {
   const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
   return lines.map(line => line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim()));
@@ -109,6 +106,7 @@ const parseDate = (value) => {
   let parsed;
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    // treat bare YYYY-MM-DD as local date (avoid implicit UTC parsing differences)
     const [y, m, d] = trimmed.split('-').map(Number);
     parsed = new Date(y, m - 1, d);
   } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
@@ -149,6 +147,7 @@ const isOnOrBefore = (value, target) => {
   return dateValue && dateTarget ? dateValue <= dateTarget : false;
 };
 
+// Helper to check if a target date string falls inside a calendar range inclusively
 const isDateInRange = (dateStr, startStr, endStr) => {
   if (!dateStr) return false;
   const d = parseDate(dateStr);
@@ -161,156 +160,17 @@ const isDateInRange = (dateStr, startStr, endStr) => {
   return true;
 };
 
-// ==========================================
-// AUTH MODAL COMPONENT (Developer Controls Roles)
-// ==========================================
-function AuthModal({ isOpen, onClose }) {
-  const [view, setView] = useState('login'); // 'login', 'register', 'forgot'
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  if (!isOpen) return null;
-
-  const handleAuthAction = async (e) => {
-    e.preventDefault();
-    setError('');
-    setMessage('');
-    setLoading(true);
-
-    try {
-      if (view === 'login') {
-        await signInWithEmailAndPassword(auth, email, password);
-        onClose();
-      } else if (view === 'register') {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
-        
-        // Developer Enforced Logic: New users safely initialize as standard "Employee" profile.
-        // Developer manually elevates authority levels within the Firebase Firestore Console dashboard.
-        await setDoc(doc(db, "users", user.uid), {
-          email: user.email,
-          role: "Employee"
-        });
-
-        setMessage('Account registration complete! Profile set to Employee.');
-        setTimeout(() => onClose(), 1500);
-      } else if (view === 'forgot') {
-        await sendPasswordResetEmail(auth, email);
-        setMessage('Password reset link sent to your email!');
-      }
-    } catch (err) {
-      setError(err.message.replace('Firebase: ', ''));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl border border-slate-100 relative">
-        <button 
-          onClick={onClose} 
-          className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 font-bold text-lg"
-        >
-          ✕
-        </button>
-
-        <div className="mb-6 text-center">
-          <div className="mx-auto w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-3 text-emerald-600">
-            {view === 'login' && <LogIn size={24} />}
-            {view === 'register' && <UserPlus size={24} />}
-            {view === 'forgot' && <Key size={24} />}
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900">
-            {view === 'login' && 'Welcome Back'}
-            {view === 'register' && 'Create Account'}
-            {view === 'forgot' && 'Reset Password'}
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">
-            {view === 'login' && 'Sign in to access secure dashboard metrics'}
-            {view === 'register' && 'Sign up to build your operator profile'}
-            {view === 'forgot' && 'Enter your email to receive a recovery link'}
-          </p>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-100 rounded-2xl text-xs font-medium text-rose-600 flex items-center gap-2">
-            <AlertCircle size={16} /> {error}
-          </div>
-        )}
-
-        {message && (
-          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-100 rounded-2xl text-xs font-medium text-emerald-700 flex items-center gap-2">
-            <AlertCircle size={16} /> {message}
-          </div>
-        )}
-
-        <form onSubmit={handleAuthAction} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Email Address</label>
-            <input 
-              type="email" 
-              required 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500 transition" 
-              placeholder="name@company.com"
-            />
-          </div>
-
-          {view !== 'forgot' && (
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Password</label>
-              <input 
-                type="password" 
-                required 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500 transition" 
-                placeholder="••••••••"
-              />
-            </div>
-          )}
-
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full bg-slate-900 hover:bg-slate-800 text-white rounded-2xl py-3 text-sm font-semibold shadow-sm transition flex items-center justify-center gap-2"
-          >
-            {loading ? <Loader2 className="animate-spin" size={18} /> : (
-              <>
-                {view === 'login' && 'Sign In'}
-                {view === 'register' && 'Register Now'}
-                {view === 'forgot' && 'Send Link'}
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-6 pt-4 border-t border-slate-100 text-center text-xs space-y-2 text-slate-500">
-          {view === 'login' && (
-            <>
-              <div>Don't have an account? <button onClick={() => { setView('register'); setError(''); }} className="text-emerald-600 font-semibold hover:underline">Register</button></div>
-              <div>Forgot your secret access? <button onClick={() => { setView('forgot'); setError(''); }} className="text-slate-700 font-semibold hover:underline">Forgot Password</button></div>
-            </>
-          )}
-          {view === 'register' && (
-            <div>Already have an profile? <button onClick={() => { setView('login'); setError(''); }} className="text-emerald-600 font-semibold hover:underline">Log In</button></div>
-          )}
-          {view === 'forgot' && (
-            <div>Return back to <button onClick={() => { setView('login'); setError(''); }} className="text-emerald-600 font-semibold hover:underline">Log In portal</button></div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+// Helper to offset dates easily for range selection
+const offsetDateString = (baseDateStr, daysOffset) => {
+  const base = parseDate(baseDateStr);
+  if (!base) return baseDateStr;
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  d.setDate(d.getDate() + daysOffset);
+  return formatAsIsoDate(d);
+};
 
 // ==========================================
-// PAGE MODULE: HEADCOUNT DASHBOARD
+// 1. PAGE MODULE: HEADCOUNT DASHBOARD
 // ==========================================
 function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selectedArea, onAreaChange }) {
   const [startDate, setStartDate] = useState('');
@@ -318,7 +178,15 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [chartData, setChartData] = useState([]);
   const [kpis, setKpis] = useState({
-    openingFieldHC: 0, active: 0, activeFull: 0, activePartial: 0, scheduled: 0, absentLate: 0, plannedLeave: 0, inShrinkage: 0, outShrinkage: 0
+    openingFieldHC: 0,
+    active: 0,
+    activeFull: 0,
+    activePartial: 0,
+    scheduled: 0,
+    absentLate: 0,
+    plannedLeave: 0,
+    inShrinkage: 0,
+    outShrinkage: 0
   });
 
   const datePickerRef = useRef(null);
@@ -340,10 +208,12 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
         setDatePickerOpen(false);
       }
     };
+
     document.addEventListener('mousedown', onDocumentClick);
     return () => document.removeEventListener('mousedown', onDocumentClick);
   }, [datePickerOpen]);
 
+  // Set initial default dates when raw data lands
   useEffect(() => {
     if (rawMetricsData && rawMetricsData.length > 0) {
       const latestAvailableDate = rawMetricsData[rawMetricsData.length - 1].name;
@@ -353,12 +223,15 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
     }
   }, [rawMetricsData, todayIso]);
 
+  // Filter trend lines and compute absolute metrics relative to the current selected date range
   useEffect(() => {
     if (!rawMetricsData || rawMetricsData.length === 0 || !startDate || !endDate) return;
 
+    // Filter timeline objects within date bounds
     const filteredDays = rawMetricsData.filter(item => isDateInRange(item.name, startDate, endDate));
     setChartData(filteredDays);
 
+    // Compute range-aware Key Performance Indicators (KPIs)
     if (filteredDays.length === 0) {
       setKpis({ openingFieldHC: 0, active: 0, activeFull: 0, activePartial: 0, scheduled: 0, absentLate: 0, plannedLeave: 0, inShrinkage: 0, outShrinkage: 0 });
       return;
@@ -380,6 +253,7 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
 
     const count = filteredDays.length;
     
+    // For counts we take the average across the range, for shrinkage we calculate across range totals
     setKpis({
       openingFieldHC: Math.round(totalOpening / count),
       active: Math.round(totalActive / count),
@@ -391,48 +265,57 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
       inShrinkage: Math.round(totalInShrink / count),
       outShrinkage: totalScheduled > 0 ? Number(((totalAbsent + totalLeave) / totalScheduled * 100).toFixed(1)) : 0
     });
+
   }, [startDate, endDate, rawMetricsData]);
 
   return (
     <div className="space-y-6">
-      <header className="bg-white/95 p-7 rounded-[32px] shadow-sm border border-slate-200/80 backdrop-blur-xl space-y-4">
+      
+      {/* HEADER & COMPACT INTERACTIVE DATE SELECTOR PANEL */}
+      <header className="bg-white/95 p-7 rounded-[32px] shadow-[0_30px_80px_-45px_rgba(15,23,42,0.18)] border border-slate-200/80 backdrop-blur-xl space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Operational Headcount Analytics</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Select a range and see the dashboard update instantly with KPIs and trends.</p>
+          <div className="space-y-3">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">Operational Headcount Analytics</h1>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Select a range and see the dashboard update instantly with KPIs and trends.</p>
+            </div>
           </div>
         </div>
 
-        <div className="relative pt-2 border-t border-slate-200 text-sm flex flex-wrap items-center gap-4">
+        {/* DATE RANGE SELECTOR */}
+        <div className="relative pt-2 border-t border-slate-200 text-sm">
           <button
             type="button"
             onClick={() => setDatePickerOpen((open) => !open)}
-            className="inline-flex items-center gap-3 rounded-[28px] border border-slate-200 bg-white px-5 py-3 text-slate-900 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex items-center gap-3 rounded-[28px] border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-5 py-3 text-slate-900 shadow-[0_15px_35px_-20px_rgba(15,23,42,0.35)] transition duration-200 hover:shadow-[0_20px_45px_-25px_rgba(15,23,42,0.35)] focus:outline-none focus:ring-2 focus:ring-emerald-400"
           >
             <Calendar size={18} />
             <span className="text-sm font-medium">Select date range</span>
           </button>
           {startDate && endDate && (
-            <span className="inline-flex items-center rounded-full bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-200">
+            <span className="ml-3 inline-flex items-center rounded-full bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-200">
               {startDate} → {endDate}
             </span>
           )}
 
-          <label className="inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow-sm">
+          <label className="ml-4 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm">
             <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Area</span>
             <select
               value={selectedArea}
               onChange={(e) => onAreaChange(e.target.value)}
-              className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1 text-slate-900 outline-none transition focus:border-emerald-400"
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
             >
               {areaOptions.map(area => (
                 <option key={area} value={area}>{area}</option>
               ))}
             </select>
           </label>
+          <div className="mt-2 ml-4 text-xs text-slate-500" title={AREA_MAP_TOOLTIP}>
+            Area labels are normalized for display (hover to see mappings).
+          </div>
 
           {datePickerOpen && (
-            <div ref={datePickerRef} className="absolute left-0 z-20 mt-14 w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-xl">
+            <div ref={datePickerRef} className="absolute left-0 z-20 mt-4 w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5">
               <div className="grid gap-4">
                 <label className="space-y-2 text-xs text-slate-500">
                   From
@@ -440,8 +323,12 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
                     type="date"
                     value={startDate}
                     max={todayIso}
-                    onChange={(e) => setStartDate(clampToMaxDate(e.target.value))}
-                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none"
+                    onChange={(e) => {
+                      const nextStart = clampToMaxDate(e.target.value);
+                      setStartDate(nextStart);
+                      if (!endDate) setEndDate(nextStart);
+                    }}
+                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
                   />
                 </label>
                 <label className="space-y-2 text-xs text-slate-500">
@@ -450,14 +337,18 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
                     type="date"
                     value={endDate}
                     max={todayIso}
-                    onChange={(e) => setEndDate(clampToMaxDate(e.target.value))}
-                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none"
+                    onChange={(e) => {
+                      const nextEnd = clampToMaxDate(e.target.value);
+                      setEndDate(nextEnd);
+                      if (!startDate) setStartDate(nextEnd);
+                    }}
+                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
                   />
                 </label>
                 <button
                   type="button"
                   onClick={() => setDatePickerOpen(false)}
-                  className="inline-flex justify-center rounded-3xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                  className="mt-1 inline-flex justify-center rounded-3xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
                 >
                   Done
                 </button>
@@ -467,6 +358,7 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
         </div>
       </header>
 
+      {/* SEPARATE INDIVIDUAL KPI METRIC CARDS */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
           <div className="text-slate-400 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"><ClipboardList size={13}/> Opening HC</div>
@@ -490,6 +382,7 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
         </div>
       </div>
 
+      {/* COMPACT ROSTER SUB-METRICS SPECIFICS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/60">
           <div className="text-emerald-700 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"><Users size={13}/> Active Logged (Avg)</div>
@@ -505,6 +398,7 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
         </div>
       </div>
 
+      {/* TREND GRAPH — ISOLATED SPECIFICALLY TO: SCHEDULED, ABSENT, PLANNED LEAVE */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
         <h2 className="text-base font-bold text-slate-800 mb-4">Shift Movements Trend View</h2>
         <div className="w-full h-80">
@@ -533,7 +427,7 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
 }
 
 // ==========================================
-// PAGE MODULE: VEHICLES
+// 2. PAGE MODULE: VEHICLES
 // ==========================================
 function VehiclesPage() {
   return (
@@ -550,7 +444,7 @@ function VehiclesPage() {
 }
 
 // ==========================================
-// PAGE MODULE: SETTINGS
+// 3. PAGE MODULE: SETTINGS
 // ==========================================
 function SettingsPage() {
   return (
@@ -566,13 +460,11 @@ function SettingsPage() {
   );
 }
 
+
 // ==========================================
 // MAIN ROOT APP CONTAINER
 // ==========================================
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [userRole, setUserRole] = useState(''); // Assignment tracking state
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('headcount');
   const [metricsData, setMetricsData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -584,33 +476,7 @@ export default function App() {
   const [areaOptions, setAreaOptions] = useState(['All Areas']);
   const [selectedArea, setSelectedArea] = useState('All Areas');
   const firstComputeRef = useRef(true);
-  const areaLoadingTimerRef = useRef(null);
-  const AREA_LOADING_DELAY = 200;
 
-  // Track user login status and retrieve corresponding role hierarchy parameter
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          if (userDoc.exists()) {
-            setUserRole(userDoc.data().role || 'Employee');
-          } else {
-            setUserRole('Employee');
-          }
-        } catch (err) {
-          console.error("Error reading database user metadata: ", err);
-          setUserRole('Employee');
-        }
-      } else {
-        setUserRole('');
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Fetch engine core data pipeline
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -646,15 +512,11 @@ export default function App() {
     });
   }, []);
 
-  // Structural breakdown engine mapping computations
   useEffect(() => {
     if (!scheduleRows.length || !rosterRows.length || !leaveRows.length) return;
 
     if (!firstComputeRef.current) {
-      if (areaLoadingTimerRef.current) {
-        clearTimeout(areaLoadingTimerRef.current);
-      }
-      areaLoadingTimerRef.current = setTimeout(() => setAreaLoading(true), AREA_LOADING_DELAY);
+      setAreaLoading(true);
     }
 
     try {
@@ -673,19 +535,21 @@ export default function App() {
       const scheduleAreaIdx = scheduleRows[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
       if (scheduleAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Schedules.");
       const rosterDateIdx = rosterHeaders['start date as employee (non-contractor)'] ?? rosterHeaders['start date'] ?? rosterHeaders['date'];
-      if (rosterDateIdx === undefined) throw new Error("Header labeled 'Start date' was not identified inside Roster.");
+      if (rosterDateIdx === undefined) throw new Error("Header labeled 'Start date as employee (non-contractor)' was not identified inside Roster.");
       const rosterEmploymentStatusIdx = rosterHeaders['employment status'];
       const rosterTypeIdx = rosterHeaders['type'];
       const rosterLocationIdx = rosterHeaders['work location name'] ?? rosterHeaders['work location'];
       if (rosterEmploymentStatusIdx === undefined) throw new Error("Header labeled 'Employment status' was not identified inside Roster.");
       if (rosterTypeIdx === undefined) throw new Error("Header labeled 'Type' was not identified inside Roster.");
 
+      // Preprocess roster and leaves to normalized, lightweight objects to speed up repeated filters
       const rosterProcessed = rosterRows.slice(1).map(row => {
         const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
         const location = normalizeArea(locationRaw);
         const startIso = formatAsIsoDate(row[rosterDateIdx]);
         return {
-          location, startIso,
+          location,
+          startIso,
           employmentStatus: String(row[rosterEmploymentStatusIdx] || '').trim(),
           type: String(row[rosterTypeIdx] || '').trim()
         };
@@ -698,6 +562,7 @@ export default function App() {
         return { dateIso, area, val };
       });
 
+      // Group schedule rows by ISO date to avoid repeated full-table scans per date
       const dateToScheduleRows = {};
       scheduleRows.slice(1).forEach(row => {
         const iso = formatAsIsoDate(row[dateIdx]);
@@ -714,19 +579,19 @@ export default function App() {
       });
 
       const computedTimeline = uniqueDates.map(targetDate => {
-        const schedForDate = dateToScheduleRows[targetDate] || [];
+          const schedForDate = dateToScheduleRows[targetDate] || [];
 
-        const openingFieldHC = schedForDate.filter(row => {
-          const shiftLine = String(row[shiftLineIdx] || '').trim().toLowerCase();
-          const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
-          const scheduleArea = normalizeArea(scheduleAreaRaw);
-          const comments = String(row[clockInCommentsIdx] || '').trim();
-          return isSameDay(row[dateIdx], targetDate) &&
-                 scheduleArea !== '' &&
-                 comments === '' &&
-                 shiftLine !== 'closer' &&
-                 (selectedArea === 'All Areas' || scheduleArea === selectedArea);
-        }).length;
+          const openingFieldHC = schedForDate.filter(row => {
+            const shiftLine = String(row[shiftLineIdx] || '').trim().toLowerCase();
+            const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
+            const scheduleArea = normalizeArea(scheduleAreaRaw);
+            const comments = String(row[clockInCommentsIdx] || '').trim();
+            return isSameDay(row[dateIdx], targetDate) &&
+                   scheduleArea !== '' &&
+                   comments === '' &&
+                   shiftLine !== 'closer' &&
+                   (selectedArea === 'All Areas' || scheduleArea === selectedArea);
+          }).length;
 
         const active = rosterProcessed.filter(r => {
           return r.employmentStatus === 'Active' &&
@@ -782,13 +647,19 @@ export default function App() {
 
         return {
           name: targetDate,
-          openingFieldHC, active, activeFull, activePartial, scheduled, absentLate, plannedLeave, inShrinkage,
+          openingFieldHC,
+          active,
+          activeFull,
+          activePartial,
+          scheduled,
+          absentLate,
+          plannedLeave,
+          inShrinkage,
           outShrinkage: Number(outShrinkage.toFixed(1))
         };
       });
 
       setMetricsData(computedTimeline);
-      if (areaLoadingTimerRef.current) clearTimeout(areaLoadingTimerRef.current);
       if (firstComputeRef.current) {
         setLoading(false);
         firstComputeRef.current = false;
@@ -796,42 +667,23 @@ export default function App() {
       setAreaLoading(false);
     } catch (err) {
       console.error(err);
-      if (areaLoadingTimerRef.current) clearTimeout(areaLoadingTimerRef.current);
-      setError("Data pipeline calculation error. Verify column layouts match formula conditions.");
+      setError("Data pipeline calculation error. Verify columns inside sub-sheets perfectly match expected formula criteria terms.");
       if (firstComputeRef.current) {
         setLoading(false);
         firstComputeRef.current = false;
       }
       setAreaLoading(false);
     }
-
-    return () => {
-      if (areaLoadingTimerRef.current) clearTimeout(areaLoadingTimerRef.current);
-    };
   }, [scheduleRows, rosterRows, leaveRows, selectedArea]);
-
-  const handleLogout = () => {
-    signOut(auth).catch(err => console.error("Error signing out: ", err));
-  };
 
   const renderView = () => {
     switch (currentPage) {
       case 'headcount':
-        return <HeadcountDashboardPage rawMetricsData={metricsData} loading={loading || areaLoading} areaOptions={areaOptions} selectedArea={selectedArea} onAreaChange={setSelectedArea} />;
+        return <HeadcountDashboardPage rawMetricsData={metricsData} loading={loading} areaOptions={areaOptions} selectedArea={selectedArea} onAreaChange={setSelectedArea} />;
       case 'vehicles':
         return <VehiclesPage />;
       case 'settings':
-        // Example logic showing how roles protect sections of the app:
-        if (['Team Leaders', 'Admin', 'Dev'].includes(userRole)) {
-          return <SettingsPage />;
-        }
-        return (
-          <div className="p-8 bg-white rounded-2xl border border-slate-100 shadow-sm text-center">
-            <Shield className="mx-auto text-slate-400 mb-2" size={32} />
-            <h3 className="font-bold text-slate-800">Access Restricted</h3>
-            <p className="text-slate-500 text-xs mt-1">This section requires Team Leaders, Admin, or Dev status.</p>
-          </div>
-        );
+        return <SettingsPage />;
       default:
         return <div className="p-6">View missing.</div>;
     }
@@ -841,84 +693,70 @@ export default function App() {
     return (
       <div className="h-screen bg-gray-50 flex flex-col items-center justify-center gap-3 p-4 text-center">
         <AlertCircle size={44} className="text-rose-500" />
-        <h2 className="text-xl font-bold text-slate-800">Pipeline Extraction Breakdown</h2>
+        <h2 className="text-xl font-bold text-slate-800">Pipeline Pipeline Extraction Breakdown</h2>
         <p className="text-slate-500 text-sm max-w-md">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 font-sans overflow-hidden">
-      {/* SIDEBAR NAVIGATION */}
+    <div className="flex h-screen bg-gray-100 font-sans">
+      
+      {/* SIDEBAR COMPONENT */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
         <div className="p-5 text-xl font-bold border-b border-slate-800 tracking-wider flex items-center gap-2">
           <Layers className="text-emerald-400" size={22} /> MatrixEngine
         </div>
         
         <nav className="flex-1 p-4 space-y-1.5">
-          <button 
-            onClick={() => setCurrentPage('headcount')} 
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition ${currentPage === 'headcount' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block px-3 mb-2">Workspaces</span>
+          
+          <button
+            onClick={() => setCurrentPage('headcount')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'headcount' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
-            <LayoutDashboard size={18} /> Headcount Dashboard
+            <LayoutDashboard size={18} /> Operational Analytics
           </button>
-          <button 
-            onClick={() => setCurrentPage('vehicles')} 
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition ${currentPage === 'vehicles' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+
+          <button
+            onClick={() => setCurrentPage('vehicles')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'vehicles' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
-            <Car size={18} /> Vehicles & Fleet
+            <Car size={18} /> Fleet Log (554899)
           </button>
-          <button 
-            onClick={() => setCurrentPage('settings')} 
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition ${currentPage === 'settings' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+
+          <button
+            onClick={() => setCurrentPage('settings')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'settings' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
-            <Settings size={18} /> Settings
+            <Settings size={18} /> Engine Rules Settings
           </button>
         </nav>
-
-        {/* AUTH SIDEBAR UTILITY LINK PANEL */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/40">
-          {currentUser ? (
-            <div className="space-y-2">
-              <div className="px-3 py-2 bg-slate-800/80 rounded-lg text-xs font-medium text-slate-300 truncate border border-slate-800 space-y-1">
-                <div className="truncate font-semibold text-emerald-400">👤 {currentUser.email}</div>
-                {userRole && (
-                  <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-slate-400 font-bold bg-slate-900 px-1.5 py-0.5 rounded-md border border-slate-800/40 w-max">
-                    <Shield size={10} className="text-emerald-500" /> {userRole}
-                  </div>
-                )}
-              </div>
-              <button 
-                onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition"
-              >
-                <LogOut size={16} /> Log Out
-              </button>
-            </div>
-          ) : (
-            <button 
-              onClick={() => setIsAuthModalOpen(true)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-md transition"
-            >
-              <LogIn size={16} /> Log In / Register
-            </button>
-          )}
-        </div>
+        <div className="p-4 border-t border-slate-800 text-[11px] text-slate-600 text-center font-medium tracking-wider">v2.1.0 — 2026</div>
       </aside>
 
-      {/* MAIN VIEW CONTENT WORKSPACE */}
-      <main className="flex-1 overflow-y-auto p-8 relative">
-        {loading ? (
-          <div className="absolute inset-0 bg-slate-50/50 flex flex-col items-center justify-center gap-3 backdrop-blur-[2px] z-50">
-            <Loader2 className="animate-spin text-emerald-500" size={32} />
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 animate-pulse">Recomputing Matrix Aggregations...</p>
+      {/* MAIN LAYOUT VIEWPORT */}
+      <main className="relative flex-1 overflow-y-auto p-8">
+        {loading && currentPage === 'headcount' ? (
+          <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-400">
+            <Loader2 className="animate-spin text-emerald-500" size={36} />
+            <p className="text-sm font-medium">Extracting raw CSV matrices...</p>
           </div>
-        ) : null}
-        {renderView()}
+        ) : (
+          <div className={areaLoading ? 'relative blur-sm transition duration-200' : 'relative transition duration-200'}>
+            {renderView()}
+            {areaLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-slate-900/20 backdrop-blur-sm">
+                <div className="inline-flex flex-col items-center gap-3 rounded-3xl border border-emerald-300/20 bg-slate-950/95 px-6 py-5 text-slate-100 shadow-2xl">
+                  <Loader2 className="animate-spin text-emerald-400" size={36} />
+                  <p className="text-sm font-medium">Updating area filter…</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
-      {/* INTERACTIVE COMPONENT MODAL INJECTION */}
-      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </div>
   );
 }
