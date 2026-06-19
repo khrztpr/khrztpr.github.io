@@ -29,8 +29,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci
-          if [ -d functions ]; then (cd functions && npm ci) || true; fi
+          npm install
+          if [ -d functions ]; then (cd functions && npm install) || true; fi
 
       - name: Build site
         run: npm run build
