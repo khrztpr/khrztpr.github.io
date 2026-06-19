@@ -6,6 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { LayoutDashboard, Users, ClipboardList, Clock, AlertTriangle, Calendar, Loader2, AlertCircle, Car, Settings, Layers, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logout } from './auth/authService';
+import NavBar from './ui/NavBar';
 // --- CONFIGURATION & ENDPOINTS ---
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRexxgM8lPBkDswjt5dR1yFTr07PW_g8X1xew6IddOjj6LkXs6SRkZoh-c6jQjHNvfsMUeY-qMSdRxX/pub?output=csv';
 
@@ -287,6 +288,7 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
 
   return (
     <div className="space-y-6">
+      <NavBar title="Operational Headcount Analytics" />
       
       {/* HEADER & COMPACT INTERACTIVE DATE SELECTOR PANEL */}
       <header className="bg-white/95 p-7 rounded-[32px] shadow-[0_30px_80px_-45px_rgba(15,23,42,0.18)] border border-slate-200/80 backdrop-blur-xl space-y-4">

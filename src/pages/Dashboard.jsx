@@ -6,6 +6,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import { toast } from "../ui/toast";
 import { logout } from "../auth/authService";
+import NavBar from "../ui/NavBar";
 
 // Import existing pages (we'll keep current App dashboard logic inside App for now if needed)
 
@@ -89,6 +90,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
+      <NavBar title="Account" />
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -98,15 +100,6 @@ export default function Dashboard() {
             </div>
             <p className="mt-2 text-sm text-slate-300">Secure, email-verified access only.</p>
           </div>
-
-          <button
-            onClick={onLogout}
-            disabled={loggingOut}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-300/20 bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 disabled:opacity-60"
-          >
-            {loggingOut ? <Loader2 className="animate-spin" size={16} /> : <LogOut size={16} />}
-            {loggingOut ? "Signing out…" : "Logout"}
-          </button>
         </div>
 
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
