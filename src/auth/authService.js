@@ -11,7 +11,9 @@ import {
   signOut
 } from "firebase/auth";
 
-import { auth } from "../firebase";
+// 1. Import 'doc' and 'setDoc' to write data, and 'db' from your config
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "../firebase"; // 👈 Updated to include your db export
 
 // -----------------------------
 // Security helpers (client-side)
@@ -94,8 +96,17 @@ export async function signUp({ email, password }) {
     throw new Error("INVALID_INPUT");
   }
 
-  // Create user
+  // Create user inside Firebase Authentication
   const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+
+  // 2. AUTOMATION ADDED HERE: Create matching document profile in Firestore
+  // This explicitly uses the matching fields required by your security rules
+  await setDoc(doc(db, "users", credential.user.uid), {
+    email: credential.user.email,
+    role: "employee", // Hardcoded safely to grant default basic access
+    area: null,       // Must be null on account creation per rules
+    createdAt: new Date()
+  });
 
   // Send verification email (required by your requirements)
   await sendEmailVerification(credential.user);
@@ -163,4 +174,3 @@ export function subscribeToAuthChanges(callback) {
 export function getFirebaseAuthInstance() {
   return getAuth();
 }
-
