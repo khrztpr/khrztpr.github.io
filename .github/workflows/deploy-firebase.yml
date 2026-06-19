@@ -19,8 +19,8 @@ jobs:
         uses: google-github-actions/auth@v1
         with:
           # Replace these placeholders with values from your GCP Workload Identity setup
-          workload_identity_provider: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: SERVICE_ACCOUNT_EMAIL
+          workload_identity_provider: projects/test-46743/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-deployer@test-46743.iam.gserviceaccount.com
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
