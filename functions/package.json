@@ -1,0 +1,11 @@
+{
+  "name": "firebase-functions",
+  "private": true,
+  "engines": {
+    "node": "18"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.12.0",
+    "firebase-functions": "^4.4.0"
+  }
+}
