@@ -35,6 +35,8 @@ jobs:
       - name: Build site
         run: npm run build
 
-      - name: Deploy to Firebase (hosting, functions, firestore rules)
-        run: |
-          npx firebase-tools deploy --only hosting,functions,firestore:rules --project test-46743
+      - name: Deploy to Firebase
+        run: npx firebase-tools deploy --only functions,hosting,firestore:rules --project test-46743
+        env:
+        # This forces Firebase to use the exact service account file your deployer just made
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ env.GOOGLE_APPLICATION_CREDENTIALS }}
