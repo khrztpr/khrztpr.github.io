@@ -138,7 +138,7 @@ export default function Dashboard() {
           <div className="mt-6 max-w-6xl mx-auto p-4 rounded-2xl border border-white/10 bg-white/5">
             <h2 className="text-lg font-semibold mb-3">User Management (Admin)</h2>
             <div className="space-y-3">
-              {usersList.length === 0 ? (
+                {usersList.length === 0 ? (
                 <div className="text-sm text-slate-400">No users found.</div>
               ) : (
                 usersList.map(u => (
@@ -147,21 +147,41 @@ export default function Dashboard() {
                       <div className="font-medium">{u.email || u.id}</div>
                       <div className="text-xs text-slate-400">Area: {u.area || '—'}</div>
                     </div>
-                    <select defaultValue={u.role || 'user'} onChange={async (e) => {
-                      const newRole = e.target.value;
-                      try {
-                        await updateDoc(doc(db, 'users', u.id), { role: newRole });
-                        setUsersList(list => list.map(x => x.id === u.id ? { ...x, role: newRole } : x));
-                        toast.success('Role updated');
-                      } catch (err) {
-                        console.warn('update role failed', err);
-                        toast.error('Unable to update role');
-                      }
-                    }} className="rounded-2xl bg-white/5 border px-3 py-2">
-                      <option value="user">User</option>
-                      <option value="manager">Manager</option>
-                      <option value="admin">Admin</option>
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <select defaultValue={u.role || 'user'} onChange={async (e) => {
+                        const newRole = e.target.value;
+                        try {
+                          await updateDoc(doc(db, 'users', u.id), { role: newRole });
+                          setUsersList(list => list.map(x => x.id === u.id ? { ...x, role: newRole } : x));
+                          toast.success('Role updated');
+                        } catch (err) {
+                          console.warn('update role failed', err);
+                          toast.error('Unable to update role');
+                        }
+                      }} className="rounded-2xl bg-white/5 border px-3 py-2">
+                        <option value="user">User</option>
+                        <option value="manager">Manager</option>
+                        <option value="admin">Admin</option>
+                      </select>
+
+                      <input
+                        type="text"
+                        defaultValue={u.area || ''}
+                        placeholder="Area"
+                        onBlur={async (e) => {
+                          const newArea = String(e.target.value || '').trim() || null;
+                          try {
+                            await updateDoc(doc(db, 'users', u.id), { area: newArea });
+                            setUsersList(list => list.map(x => x.id === u.id ? { ...x, area: newArea } : x));
+                            toast.success('Area updated');
+                          } catch (err) {
+                            console.warn('update area failed', err);
+                            toast.error('Unable to update area');
+                          }
+                        }}
+                        className="rounded-2xl bg-white/5 border px-3 py-2 w-40"
+                      />
+                    </div>
                   </div>
                 ))
               )}

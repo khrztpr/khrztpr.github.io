@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { auth, db } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { LayoutDashboard, Users, ClipboardList, Clock, AlertTriangle, Calendar, Loader2, AlertCircle, Car, Settings, Layers } from 'lucide-react';
-import { db } from './firebase'; // <-- This pulls the database connection into your dashboard
+import { LayoutDashboard, Users, ClipboardList, Clock, AlertTriangle, Calendar, Loader2, AlertCircle, Car, Settings, Layers, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { logout } from './auth/authService';
 // --- CONFIGURATION & ENDPOINTS ---
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRexxgM8lPBkDswjt5dR1yFTr07PW_g8X1xew6IddOjj6LkXs6SRkZoh-c6jQjHNvfsMUeY-qMSdRxX/pub?output=csv';
 
@@ -190,6 +194,8 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
   });
 
   const datePickerRef = useRef(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const navigate = useNavigate();
   const todayIso = new Date().toISOString().split('T')[0];
   const clampToMaxDate = (value) => {
     if (!value) return '';
@@ -212,6 +218,17 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
     document.addEventListener('mousedown', onDocumentClick);
     return () => document.removeEventListener('mousedown', onDocumentClick);
   }, [datePickerOpen]);
+
+  async function onLogout() {
+    setLoggingOut(true);
+    try {
+      await logout();
+    } catch (err) {
+      console.warn('logout failed', err);
+    }
+    setLoggingOut(false);
+    navigate('/login', { replace: true });
+  }
 
   // Set initial default dates when raw data lands
   useEffect(() => {
@@ -279,6 +296,17 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
               <h1 className="text-3xl font-bold tracking-tight text-slate-900">Operational Headcount Analytics</h1>
               <p className="mt-2 text-sm leading-6 text-slate-500">Select a range and see the dashboard update instantly with KPIs and trends.</p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onLogout}
+              disabled={loggingOut}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-500/20 disabled:opacity-60"
+            >
+              {loggingOut ? <Loader2 className="animate-spin" size={14} /> : <LogOut size={14} />}
+              <span>{loggingOut ? 'Signing out…' : 'Logout'}</span>
+            </button>
           </div>
         </div>
 
@@ -476,6 +504,27 @@ export default function App() {
   const [areaOptions, setAreaOptions] = useState(['All Areas']);
   const [selectedArea, setSelectedArea] = useState('All Areas');
   const firstComputeRef = useRef(true);
+
+  // enforce area restriction for non-admin users
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (!u) return;
+      try {
+        const snap = await getDoc(doc(db, 'users', u.uid));
+        const data = snap.exists() ? snap.data() : null;
+        if (data?.role && data.role !== 'admin') {
+          const areaName = data?.area || null;
+          if (areaName) {
+            setAreaOptions([areaName]);
+            setSelectedArea(areaName);
+          }
+        }
+      } catch (err) {
+        console.warn('failed to enforce area restriction:', err);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     setLoading(true);
