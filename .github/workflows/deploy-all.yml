@@ -1,0 +1,98 @@
+name: Build & Deploy (Pages + Firebase)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy-all
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      dist_present: ${{ steps.build.outputs.dist_present }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build site
+        id: build
+        run: |
+          npm run build
+          if [ -d dist ]; then echo "dist_present=true" >> $GITHUB_OUTPUT; else echo "dist_present=false" >> $GITHUB_OUTPUT; fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: Upload generic artifact for other jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: './dist'
+
+  deploy-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout (required by Pages action)
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  deploy-firebase:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud via Workload Identity
+        uses: google-github-actions/auth@v1
+        with:
+          # fill these placeholders with your configuration
+          workload_identity_provider: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: SERVICE_ACCOUNT_EMAIL
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Download built artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      - name: Deploy to Firebase (functions + hosting + firestore rules)
+        run: |
+          # artifact extracted into ./dist by download-artifact
+          npx firebase-tools deploy --only functions,hosting,firestore:rules --project YOUR_PROJECT_ID
