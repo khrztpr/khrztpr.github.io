@@ -169,6 +169,133 @@ const offsetDateString = (baseDateStr, daysOffset) => {
   return formatAsIsoDate(d);
 };
 
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+const buildCalendarMatrix = (year, month) => {
+  const firstOfMonth = new Date(year, month, 1);
+  const start = new Date(firstOfMonth);
+  const dayOffset = (firstOfMonth.getDay() + 6) % 7; // Monday-first
+  start.setDate(firstOfMonth.getDate() - dayOffset);
+
+  const matrix = [];
+  for (let week = 0; week < 6; week++) {
+    const weekRow = [];
+    for (let day = 0; day < 7; day++) {
+      weekRow.push(new Date(start));
+      start.setDate(start.getDate() + 1);
+    }
+    matrix.push(weekRow);
+  }
+  return matrix;
+};
+
+const isRangeDate = (dateIso, startIso, endIso) => {
+  if (!dateIso || !startIso || !endIso) return false;
+  return dateIso >= startIso && dateIso <= endIso;
+};
+
+function DateRangeCalendar({ startDate, endDate, onChangeStart, onChangeEnd, maxDate, currentMonth, onMonthChange }) {
+  const matrix = buildCalendarMatrix(currentMonth.getFullYear(), currentMonth.getMonth());
+  const maxIso = maxDate || formatAsIsoDate(new Date());
+
+  const handleDaySelect = (dateIso) => {
+    if (!dateIso || dateIso > maxIso) return;
+    const date = parseDate(dateIso);
+    if (!date) return;
+
+    // If the selected end is before the current start, flip into a valid range.
+    if (dateIso < startDate || !endDate) {
+      onChangeStart(dateIso);
+      if (!endDate || dateIso > endDate) onChangeEnd(dateIso);
+      return;
+    }
+
+    if (dateIso > endDate) {
+      onChangeEnd(dateIso);
+      return;
+    }
+
+    // If selecting within a valid range, move the current selection to the closest boundary.
+    if (Math.abs(parseDate(dateIso) - parseDate(startDate)) <= Math.abs(parseDate(dateIso) - parseDate(endDate))) {
+      onChangeStart(dateIso);
+    } else {
+      onChangeEnd(dateIso);
+    }
+  };
+
+  return (
+    <div className="rounded-[32px] border border-slate-200 bg-slate-950 p-5 text-slate-100 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/60">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => onMonthChange(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-slate-200 transition hover:bg-slate-800"
+        >
+          ‹
+        </button>
+        <div className="text-center text-sm font-semibold text-slate-100">
+          {MONTH_LABELS[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+        </div>
+        <button
+          type="button"
+          onClick={() => onMonthChange(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-slate-200 transition hover:bg-slate-800"
+        >
+          ›
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] uppercase tracking-[0.18em] text-slate-500">
+        {WEEKDAY_LABELS.map((label) => (
+          <div key={label}>{label}</div>
+        ))}
+      </div>
+
+      <div className="mt-2 grid grid-cols-7 gap-1">
+        {matrix.flat().map((cellDate) => {
+          const iso = formatAsIsoDate(cellDate);
+          const isCurrentMonth = cellDate.getMonth() === currentMonth.getMonth();
+          const disabled = iso > maxIso;
+          const selectedStart = iso === startDate;
+          const selectedEnd = iso === endDate;
+          const inRange = isRangeDate(iso, startDate, endDate);
+
+          return (
+            <button
+              key={iso}
+              type="button"
+              onClick={() => handleDaySelect(iso)}
+              disabled={disabled}
+              className={`group relative min-h-[42px] rounded-3xl border transition focus:outline-none ${
+                selectedStart || selectedEnd
+                  ? 'border-emerald-300 bg-emerald-500 text-white shadow-[0_8px_20px_-15px_rgba(16,185,129,0.8)]'
+                  : inRange
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-slate-100'
+                  : 'border-transparent bg-slate-900 text-slate-400 hover:border-slate-600 hover:bg-slate-850 hover:text-slate-100'
+              } ${!isCurrentMonth ? 'opacity-50' : ''} ${disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}>
+              <span className="text-sm font-semibold">{cellDate.getDate()}</span>
+              {selectedStart && <span className="sr-only">Start date</span>}
+              {selectedEnd && <span className="sr-only">End date</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-[0.24em] text-slate-500">From</div>
+          <div className="text-slate-100">{startDate || 'Select date'}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-[0.24em] text-slate-500">To</div>
+          <div className="text-slate-100">{endDate || 'Select date'}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // ==========================================
 // 1. PAGE MODULE: HEADCOUNT DASHBOARD
@@ -177,6 +304,7 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [chartData, setChartData] = useState([]);
   const [kpis, setKpis] = useState({
     openingFieldHC: 0,
@@ -221,8 +349,13 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
       const initialDate = latestAvailableDate > todayIso ? todayIso : latestAvailableDate;
       setStartDate(initialDate);
       setEndDate(initialDate);
+      setCalendarMonth(parseDate(initialDate) || new Date());
     }
   }, [rawMetricsData, todayIso]);
+
+  useEffect(() => {
+    if (startDate) setCalendarMonth(parseDate(startDate) || new Date());
+  }, [startDate]);
 
   // Filter trend lines and compute absolute metrics relative to the current selected date range
   useEffect(() => {
@@ -316,42 +449,47 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
           </div>
 
           {datePickerOpen && (
-            <div ref={datePickerRef} className="absolute left-0 z-20 mt-4 w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5">
-              <div className="grid gap-4">
-                <label className="space-y-2 text-xs text-slate-500">
-                  From
-                  <input
-                    type="date"
-                    value={startDate}
-                    max={todayIso}
-                    onChange={(e) => {
-                      const nextStart = clampToMaxDate(e.target.value);
-                      setStartDate(nextStart);
-                      if (!endDate) setEndDate(nextStart);
-                    }}
-                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
-                  />
-                </label>
-                <label className="space-y-2 text-xs text-slate-500">
-                  To
-                  <input
-                    type="date"
-                    value={endDate}
-                    max={todayIso}
-                    onChange={(e) => {
-                      const nextEnd = clampToMaxDate(e.target.value);
-                      setEndDate(nextEnd);
-                      if (!startDate) setStartDate(nextEnd);
-                    }}
-                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
-                  />
-                </label>
+            <div ref={datePickerRef} className="absolute left-0 z-20 mt-4 w-full max-w-md rounded-[32px] border border-slate-200 bg-slate-950 p-5 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/60">
+              <div className="flex flex-col gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                    className="inline-flex h-10 items-center justify-center rounded-3xl border border-slate-700 bg-slate-900 px-4 text-sm text-slate-200 transition hover:bg-slate-800"
+                  >
+                    Previous month
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+                    className="inline-flex h-10 items-center justify-center rounded-3xl border border-slate-700 bg-slate-900 px-4 text-sm text-slate-200 transition hover:bg-slate-800"
+                  >
+                    Next month
+                  </button>
+                </div>
+                <DateRangeCalendar
+                  startDate={startDate}
+                  endDate={endDate}
+                  onChangeStart={(value) => {
+                    const nextValue = clampToMaxDate(value);
+                    setStartDate(nextValue);
+                    if (!endDate || nextValue > endDate) setEndDate(nextValue);
+                  }}
+                  onChangeEnd={(value) => {
+                    const nextValue = clampToMaxDate(value);
+                    setEndDate(nextValue);
+                    if (!startDate || nextValue < startDate) setStartDate(nextValue);
+                  }}
+                  maxDate={todayIso}
+                  currentMonth={calendarMonth}
+                  onMonthChange={setCalendarMonth}
+                />
                 <button
                   type="button"
                   onClick={() => setDatePickerOpen(false)}
-                  className="mt-1 inline-flex justify-center rounded-3xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                  className="mt-1 inline-flex justify-center rounded-3xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-emerald-400"
                 >
-                  Done
+                  Close calendar
                 </button>
               </div>
             </div>
