@@ -476,8 +476,6 @@ export default function App() {
   const [areaOptions, setAreaOptions] = useState(['All Areas']);
   const [selectedArea, setSelectedArea] = useState('All Areas');
   const firstComputeRef = useRef(true);
-  const areaLoadingTimerRef = useRef(null);
-  const AREA_LOADING_DELAY = 200;
 
   useEffect(() => {
     setLoading(true);
@@ -518,10 +516,7 @@ export default function App() {
     if (!scheduleRows.length || !rosterRows.length || !leaveRows.length) return;
 
     if (!firstComputeRef.current) {
-      if (areaLoadingTimerRef.current) {
-        clearTimeout(areaLoadingTimerRef.current);
-      }
-      areaLoadingTimerRef.current = setTimeout(() => setAreaLoading(true), AREA_LOADING_DELAY);
+      setAreaLoading(true);
     }
 
     try {
@@ -665,10 +660,6 @@ export default function App() {
       });
 
       setMetricsData(computedTimeline);
-      if (areaLoadingTimerRef.current) {
-        clearTimeout(areaLoadingTimerRef.current);
-        areaLoadingTimerRef.current = null;
-      }
       if (firstComputeRef.current) {
         setLoading(false);
         firstComputeRef.current = false;
@@ -676,10 +667,6 @@ export default function App() {
       setAreaLoading(false);
     } catch (err) {
       console.error(err);
-      if (areaLoadingTimerRef.current) {
-        clearTimeout(areaLoadingTimerRef.current);
-        areaLoadingTimerRef.current = null;
-      }
       setError("Data pipeline calculation error. Verify columns inside sub-sheets perfectly match expected formula criteria terms.");
       if (firstComputeRef.current) {
         setLoading(false);
@@ -687,13 +674,6 @@ export default function App() {
       }
       setAreaLoading(false);
     }
-
-    return () => {
-      if (areaLoadingTimerRef.current) {
-        clearTimeout(areaLoadingTimerRef.current);
-        areaLoadingTimerRef.current = null;
-      }
-    };
   }, [scheduleRows, rosterRows, leaveRows, selectedArea]);
 
   const renderView = () => {
