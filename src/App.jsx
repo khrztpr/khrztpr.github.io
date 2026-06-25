@@ -23,15 +23,15 @@ const AREA_MAP = {
   'SFO': 'San Francisco',
   'SCC': 'Santa Clara',
   'SAC NORTH': 'North Sacramento',
-  'SCC ONLOK': 'Santa Clara',
+  'SCC ONLOK': 'Santa Clara Onlok',
   'ALC': 'Alameda',
-  'BLS': 'Ambulance',
-  'SONOMA': 'Solano/Contra Costa',
-  'SF ONLOK': 'San Francisco',
-  'LLC (from sac south)': 'South Sacramento',
-  'SOCAL': 'Riverside',
+  'BLS': 'BLS',
+  'SONOMA': 'Sonoma',
+  'SF ONLOK': 'San Francisco Onlok',
+  'LLC (from sac south)': 'South Sacramento LLC',
+  'SOCAL': 'South California',
   'HQ': 'Headquarters',
-  'ALC ONLOK': 'Alameda',
+  'ALC ONLOK': 'Alameda Onlok',
   'LLC': 'LLC',
   'SAN DIEGO': 'San Diego',
   'SAN NORTH': 'North Sacramento'
@@ -537,34 +537,45 @@ export default function App() {
 
 // prevent non-admins from changing the area filter client-side
   const [areaLock, setAreaLock] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       if (!u) {
         setAreaLock(null);
-        setAreaOptions(['All Areas']);
+        setIsAdmin(false);
         setSelectedArea('All Areas');
         return;
       }
+
       try {
         const snap = await getDoc(doc(db, 'users', u.uid));
         const data = snap.exists() ? snap.data() : null;
-        if (data?.role && data.role !== 'admin' && data?.area) {
-          setAreaLock(data.area);
-          setSelectedArea(data.area);
-          setAreaOptions([data.area]);
-          return;
+
+        const role = data?.role || 'user';
+        const area = data?.area || null;
+
+        const nextIsAdmin = role === 'admin';
+        setIsAdmin(nextIsAdmin);
+
+        if (!nextIsAdmin && area) {
+          setAreaLock(area);
+          setSelectedArea(area);
+        } else {
+          setAreaLock(null);
+          // keep selectedArea as-is (it will be validated once availableAreas is computed)
         }
-        setAreaLock(null);
       } catch (err) {
         console.warn('failed to compute area lock:', err);
+        setAreaLock(null);
+        setIsAdmin(false);
       }
     });
     return () => unsub();
   }, []);
 
   const handleAreaChange = (next) => {
-    if (areaLock) {
+    if (!isAdmin && areaLock) {
       // locked users can only view their DB area
       if (next !== areaLock) setSelectedArea(areaLock);
       return;
