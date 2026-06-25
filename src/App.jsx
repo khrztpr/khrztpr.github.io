@@ -176,7 +176,15 @@ const offsetDateString = (baseDateStr, daysOffset) => {
 // ==========================================
 // 1. PAGE MODULE: HEADCOUNT DASHBOARD
 // ==========================================
-function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selectedArea, onAreaChange }) {
+function HeadcountDashboardPage({
+  rawMetricsData,
+  loading,
+  areaOptions,
+  selectedArea,
+  onAreaChange,
+  areaReadonly,
+  areaReadOnlyLabel
+}) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -315,18 +323,25 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
             </span>
           )}
 
-          <label className="ml-4 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm">
-            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Area</span>
-            <select
-              value={selectedArea}
-              onChange={(e) => onAreaChange(e.target.value)}
-              className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
-            >
-              {areaOptions.map(area => (
-                <option key={area} value={area}>{area}</option>
-              ))}
-            </select>
-          </label>
+          {areaReadonly ? (
+            <div className="ml-4 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Area</span>
+              <span className="rounded-2xl bg-slate-50 px-3 py-2 text-slate-900 font-medium">{areaReadOnlyLabel || selectedArea}</span>
+            </div>
+          ) : (
+            <label className="ml-4 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Area</span>
+              <select
+                value={selectedArea}
+                onChange={(e) => onAreaChange(e.target.value)}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
+              >
+                {areaOptions.map(area => (
+                  <option key={area} value={area}>{area}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="mt-2 ml-4 text-xs text-slate-500" title={AREA_MAP_TOOLTIP}>
             Area labels are normalized for display (hover to see mappings).
           </div>
@@ -647,14 +662,27 @@ export default function App() {
       setScheduleRows(schedules);
       setRosterRows(roster);
       setLeaveRows(leaves);
-      setAreaOptions(['All Areas', ...availableAreas]);
-      // If currently selected area is no longer present (e.g., after re-computation), reset safely.
+
+      // Build dropdown options from available areas found in the extracted data.
+      // If user is locked to a specific area, override options/selection accordingly.
+      const areaOptionsNext = ['All Areas', ...availableAreas];
+      setAreaOptions((prevOptions) => {
+        if (areaLock && availableAreasSet.has(areaLock)) return [areaLock];
+        return areaOptionsNext;
+      });
+
       setSelectedArea((prev) => {
+        // Locked users must always remain on their assigned area.
+        if (areaLock) {
+          return availableAreasSet.has(areaLock) ? areaLock : 'All Areas';
+        }
+
         if (!prev) return 'All Areas';
         if (prev === 'All Areas') return 'All Areas';
         if (availableAreasSet.has(prev)) return prev;
         return 'All Areas';
       });
+
       setLoading(false);
     })
     .catch(err => {
@@ -831,7 +859,17 @@ export default function App() {
   const renderView = () => {
     switch (currentPage) {
       case 'headcount':
-        return <HeadcountDashboardPage rawMetricsData={metricsData} loading={loading} areaOptions={areaOptions} selectedArea={selectedArea} onAreaChange={handleAreaChange} />;
+        return (
+          <HeadcountDashboardPage
+            rawMetricsData={metricsData}
+            loading={loading}
+            areaOptions={areaOptions}
+            selectedArea={selectedArea}
+            onAreaChange={handleAreaChange}
+            areaReadonly={!isAdmin && !!areaLock}
+            areaReadOnlyLabel={areaLock}
+          />
+        );
       case 'vehicles':
         return <VehiclesPage />;
       case 'settings':
@@ -857,7 +895,6 @@ export default function App() {
       {/* SIDEBAR COMPONENT */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
         <div className="p-5 rounded-b-3xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-950 border-b border-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 mb-2">AMW Analytical Dashboard</div>
           <div className="flex items-center gap-3">
             <Layers className="text-emerald-400" size={24} />
             <div>
