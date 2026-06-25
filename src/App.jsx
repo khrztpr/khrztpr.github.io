@@ -3,9 +3,17 @@ import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { LayoutDashboard, Users, ClipboardList, Clock, AlertTriangle, Calendar, Loader2, AlertCircle, Car, Settings, Layers, LogOut } from 'lucide-react';
+import { LayoutDashboard } from 'lucide-react';
+
 import { useNavigate } from 'react-router-dom';
+
 import { logout } from './auth/authService';
+import Sidebar from './components/Sidebar';
+import KPICards from './components/KPICards';
+import TrendChart from './components/TrendChart';
+import DateRangePicker from './components/DateRangePicker';
+import { designTokens } from './designTokens';
+
 // --- CONFIGURATION & ENDPOINTS ---
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRexxgM8lPBkDswjt5dR1yFTr07PW_g8X1xew6IddOjj6LkXs6SRkZoh-c6jQjHNvfsMUeY-qMSdRxX/pub?output=csv';
 
@@ -16,25 +24,28 @@ const GIDS = {
 };
 
 // Canonical area mapping: raw sheet codes -> normalized display name
+// (Values must only come from your canonical work location list)
 const AREA_MAP = {
   'SAC SOUTH': 'South Sacramento',
-  'FRESNO': 'Fresno',
-  'SOL/COCO': 'Solano/Contra Costa',
-  'SFO': 'San Francisco',
-  'SCC': 'Santa Clara',
+  'SACRAMENTO': 'South Sacramento',
   'SAC NORTH': 'North Sacramento',
-  'SCC ONLOK': 'Santa Clara Onlok',
-  'ALC': 'Alameda',
-  'BLS': 'BLS',
-  'SONOMA': 'Sonoma',
+  'SAN NORTH': 'North Sacramento',
+  'SFO': 'San Francisco',
+  'EASY BAY': 'San Francisco',
   'SF ONLOK': 'San Francisco Onlok',
-  'LLC (from sac south)': 'South Sacramento LLC',
-  'SOCAL': 'South California',
-  'HQ': 'Headquarters',
+  'SCC': 'Santa Clara',
+  'SCC ONLOK': 'Santa Clara Onlok',
+  'SONOMA': 'Sonoma',
+  'SOL/COCO': 'Solano/Contra Costa',
+  'ALC': 'Alameda',
   'ALC ONLOK': 'Alameda Onlok',
+  'BLS': 'BLS',
+  'SOCAL': 'Riverside',
+  'HQ': 'Headquarters',
+  'LLC (from sac south)': 'South Sacramento LLC',
   'LLC': 'LLC',
   'SAN DIEGO': 'San Diego',
-  'SAN NORTH': 'North Sacramento'
+  'LLC (from sac south)': 'South Sacramento LLC'
 };
 
 // Tooltip-friendly mapping string for UI hints
@@ -295,46 +306,42 @@ function HeadcountDashboardPage({
 
   return (
     <div className="space-y-6">
-      {/* HEADER & COMPACT INTERACTIVE DATE SELECTOR PANEL */}
-      <header className="bg-white/95 p-7 rounded-[32px] shadow-[0_30px_80px_-45px_rgba(15,23,42,0.18)] border border-slate-200/80 backdrop-blur-xl space-y-4">
+      <header className="bg-neutral.card/95 p-7 rounded-[32px] shadow-sm border border-neutral.border/80 backdrop-blur-xl space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-3">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">Operational Headcount Analytics</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-500">Select a range and see the dashboard update instantly with KPIs and trends.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-neutral.textPrimary">Operational Headcount Analytics</h1>
+              <p className="mt-2 text-sm leading-6 text-neutral.textMuted">Select a range and see the dashboard update instantly with KPIs and trends.</p>
             </div>
           </div>
-
         </div>
 
-        {/* DATE RANGE SELECTOR */}
-        <div className="relative pt-2 border-t border-slate-200 text-sm">
-          <button
-            type="button"
-            onClick={() => setDatePickerOpen((open) => !open)}
-            className="inline-flex items-center gap-3 rounded-[28px] border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-5 py-3 text-slate-900 shadow-[0_15px_35px_-20px_rgba(15,23,42,0.35)] transition duration-200 hover:shadow-[0_20px_45px_-25px_rgba(15,23,42,0.35)] focus:outline-none focus:ring-2 focus:ring-emerald-400"
-          >
-            <Calendar size={18} />
-            <span className="text-sm font-medium">Select date range</span>
-          </button>
-          {startDate && endDate && (
-            <span className="ml-3 inline-flex items-center rounded-full bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-200">
-              {startDate} → {endDate}
-            </span>
-          )}
+        <div className="relative pt-2 border-t border-neutral.border text-sm">
+          <DateRangePicker
+            startDate={startDate}
+            endDate={endDate}
+            todayIso={todayIso}
+            datePickerOpen={datePickerOpen}
+            setDatePickerOpen={setDatePickerOpen}
+            clampToMaxDate={clampToMaxDate}
+            setStartDate={setStartDate}
+            setEndDate={setEndDate}
+            datePickerRef={datePickerRef}
+            onDone={() => setDatePickerOpen(false)}
+          />
 
           {areaReadonly ? (
-            <div className="ml-4 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Area</span>
-              <span className="rounded-2xl bg-slate-50 px-3 py-2 text-slate-900 font-medium">{areaReadOnlyLabel || selectedArea}</span>
+            <div className="ml-4 inline-flex items-center gap-3 rounded-full border border-neutral.border bg-neutral.card px-4 py-3 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-neutral.textMuted">Area</span>
+              <span className="rounded-2xl bg-neutral.card px-3 py-2 text-sm font-medium text-neutral.textPrimary">{areaReadOnlyLabel || selectedArea}</span>
             </div>
           ) : (
-            <label className="ml-4 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">Area</span>
+            <label className="ml-4 inline-flex items-center gap-3 rounded-full border border-neutral.border bg-neutral.card px-4 py-3 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-neutral.textMuted">Area</span>
               <select
                 value={selectedArea}
                 onChange={(e) => onAreaChange(e.target.value)}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
+                className="rounded-2xl border border-neutral.border bg-neutral.card px-3 py-2 text-sm text-neutral.textPrimary outline-none transition focus:border-primary.base focus:ring-2 focus:ring-primary.base/30"
               >
                 {areaOptions.map(area => (
                   <option key={area} value={area}>{area}</option>
@@ -342,121 +349,20 @@ function HeadcountDashboardPage({
               </select>
             </label>
           )}
-          <div className="mt-2 ml-4 text-xs text-slate-500" title={AREA_MAP_TOOLTIP}>
+
+          <div className="mt-2 ml-4 text-xs text-neutral.textMuted" title={AREA_MAP_TOOLTIP}>
             Area labels are normalized for display (hover to see mappings).
           </div>
-
-          {datePickerOpen && (
-            <div ref={datePickerRef} className="absolute left-0 z-20 mt-4 w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5">
-              <div className="grid gap-4">
-                <label className="space-y-2 text-xs text-slate-500">
-                  From
-                  <input
-                    type="date"
-                    value={startDate}
-                    max={todayIso}
-                    onChange={(e) => {
-                      const nextStart = clampToMaxDate(e.target.value);
-                      setStartDate(nextStart);
-                      if (!endDate) setEndDate(nextStart);
-                    }}
-                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
-                  />
-                </label>
-                <label className="space-y-2 text-xs text-slate-500">
-                  To
-                  <input
-                    type="date"
-                    value={endDate}
-                    max={todayIso}
-                    onChange={(e) => {
-                      const nextEnd = clampToMaxDate(e.target.value);
-                      setEndDate(nextEnd);
-                      if (!startDate) setStartDate(nextEnd);
-                    }}
-                    className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setDatePickerOpen(false)}
-                  className="mt-1 inline-flex justify-center rounded-3xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </header>
 
-      {/* SEPARATE INDIVIDUAL KPI METRIC CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-          <div className="text-slate-400 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"><ClipboardList size={13}/> Opening HC</div>
-          <div className="text-xl font-bold text-slate-800 mt-2">{kpis.openingFieldHC}</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-          <div className="text-slate-400 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"><Clock size={13}/> Scheduled</div>
-          <div className="text-xl font-bold text-blue-600 mt-2">{kpis.scheduled}</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-          <div className="text-slate-400 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"><AlertTriangle size={13} className="text-rose-500" /> Absent/Late</div>
-          <div className="text-xl font-bold text-rose-600 mt-2">{kpis.absentLate}</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-          <div className="text-slate-400 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"><Calendar size={13} className="text-amber-500"/> Planned Leave</div>
-          <div className="text-xl font-bold text-amber-600 mt-2">{kpis.plannedLeave}</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 col-span-2 md:col-span-1">
-          <div className="text-slate-400 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"><AlertTriangle size={13}/> Out Shrinkage</div>
-          <div className="text-xl font-bold text-rose-700 mt-2">{kpis.outShrinkage}%</div>
-        </div>
-      </div>
+      <KPICards kpis={kpis} />
 
-      {/* COMPACT ROSTER SUB-METRICS SPECIFICS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/60">
-          <div className="text-emerald-700 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1"><Users size={13}/> Active Logged (Avg)</div>
-          <div className="text-xl font-bold text-emerald-800 mt-1">{kpis.active}</div>
-        </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60">
-          <div className="text-slate-500 text-[11px] font-bold uppercase tracking-wider">Active - Full Time</div>
-          <div className="text-xl font-bold text-slate-800 mt-1">{kpis.activeFull}</div>
-        </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60">
-          <div className="text-slate-500 text-[11px] font-bold uppercase tracking-wider">Active - Part Time</div>
-          <div className="text-xl font-bold text-slate-800 mt-1">{kpis.activePartial}</div>
-        </div>
-      </div>
-
-      {/* TREND GRAPH — ISOLATED SPECIFICALLY TO: SCHEDULED, ABSENT, PLANNED LEAVE */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-        <h2 className="text-base font-bold text-slate-800 mb-4">Shift Movements Trend View</h2>
-        <div className="w-full h-80">
-          {chartData.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-lg bg-slate-50">
-              No parameters matches for the selected data range variables.
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} />
-                <YAxis stroke="#94a3b8" fontSize={11} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" name="Scheduled" dataKey="scheduled" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3 }} />
-                <Line type="monotone" name="Absent / Late" dataKey="absentLate" stroke="#e11d48" strokeWidth={2} />
-                <Line type="monotone" name="Planned Leave" dataKey="plannedLeave" stroke="#d97706" strokeWidth={2} strokeDasharray="3 3" />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
+      <TrendChart chartData={chartData} />
     </div>
   );
 }
+
 
 // ==========================================
 // 2. PAGE MODULE: VEHICLES
@@ -465,10 +371,10 @@ function VehiclesPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-bold text-slate-800">Vehicles & Fleet Management</h1>
-        <p className="text-slate-500 text-sm mt-1">Isolating Fleet metrics hooked via GID 554899445.</p>
+        <h1 className="text-3xl font-bold text-neutral.textPrimary">Vehicles & Fleet Management</h1>
+        <p className="text-neutral.textMuted text-sm mt-1">Isolating Fleet metrics hooked via GID 554899445.</p>
       </header>
-      <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 text-center text-slate-400 text-sm">
+      <div className="bg-neutral.card p-8 rounded-xl shadow-sm border border-neutral.border text-center text-neutral.textMuted text-sm">
         Vehicle tracking module ready for metric array filters.
       </div>
     </div>
@@ -482,10 +388,10 @@ function SettingsPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-bold text-slate-800">System Dashboard Settings</h1>
-        <p className="text-slate-500 text-sm mt-1">Manage pipeline filters, thresholds, and refresh rates.</p>
+        <h1 className="text-3xl font-bold text-neutral.textPrimary">System Dashboard Settings</h1>
+        <p className="text-neutral.textMuted text-sm mt-1">Manage pipeline filters, thresholds, and refresh rates.</p>
       </header>
-      <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 text-center text-slate-400 text-sm">
+      <div className="bg-neutral.card p-8 rounded-xl shadow-sm border border-neutral.border text-center text-neutral.textMuted text-sm">
         Global application infrastructure adjustments workspace.
       </div>
     </div>
@@ -493,11 +399,13 @@ function SettingsPage() {
 }
 
 
+
 // ==========================================
 // MAIN ROOT APP CONTAINER
 // ==========================================
 export default function App() {
   const [currentPage, setCurrentPage] = useState('headcount');
+
   const [metricsData, setMetricsData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [areaLoading, setAreaLoading] = useState(false);
@@ -893,59 +801,14 @@ export default function App() {
     <div className="flex h-screen bg-gray-100 font-sans">
       
       {/* SIDEBAR COMPONENT */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
-        <div className="p-5 rounded-b-3xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-950 border-b border-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="flex items-center gap-3">
-            <Layers className="text-emerald-400" size={24} />
-            <div>
-              <div className="text-lg font-semibold text-white">AMW Analytics</div>
-              <div className="text-sm text-slate-400">Operational insight hub</div>
-            </div>
-          </div>
-        </div>
-        
-        <nav className="flex-1 p-4 space-y-1.5">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block px-3 mb-2">Workspaces</span>
-          
-          <button
-            onClick={() => setCurrentPage('headcount')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'headcount' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-          >
-            <LayoutDashboard size={18} /> Operational Analytics
-          </button>
+      <Sidebar
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        currentUserEmail={currentUserEmail}
+        sidebarLoggingOut={sidebarLoggingOut}
+        onLogout={onSidebarLogout}
+      />
 
-          <button
-            onClick={() => setCurrentPage('vehicles')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'vehicles' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-          >
-            <Car size={18} /> Fleet Log (554899)
-          </button>
-
-          <button
-            onClick={() => setCurrentPage('settings')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'settings' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-          >
-            <Settings size={18} /> Engine Rules Settings
-          </button>
-        </nav>
-        <div className="mt-auto p-4 border-t border-slate-800">
-          {currentUserEmail ? (
-            <div className="mb-3 rounded-2xl bg-slate-800/80 px-4 py-3 text-sm text-slate-200">
-              <div className="font-semibold text-slate-100">Signed in as</div>
-              <div className="truncate text-slate-300">{currentUserEmail}</div>
-            </div>
-          ) : null}
-          <button
-            onClick={onSidebarLogout}
-            disabled={sidebarLoggingOut}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-700 transition hover:bg-rose-500/20 disabled:opacity-60"
-          >
-            {sidebarLoggingOut ? <Loader2 className="animate-spin" size={14} /> : <LogOut size={14} />}
-            <span>{sidebarLoggingOut ? 'Signing out…' : 'Logout'}</span>
-          </button>
-          <div className="mt-4 text-[11px] text-slate-600 text-center font-medium tracking-wider">v2.1.0 — 2026</div>
-        </div>
-      </aside>
 
       {/* MAIN LAYOUT VIEWPORT */}
       <main className="relative flex-1 overflow-y-auto p-8">
