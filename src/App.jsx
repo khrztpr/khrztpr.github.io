@@ -25,7 +25,7 @@ const AREA_MAP = {
   'SAC NORTH': 'North Sacramento',
   'SCC ONLOK': 'Santa Clara',
   'ALC': 'Alameda',
-  'BLS': 'BLS',
+  'BLS': 'Ambulance',
   'SONOMA': 'Solano/Contra Costa',
   'SF ONLOK': 'San Francisco',
   'LLC (from sac south)': 'South Sacramento',
@@ -327,6 +327,10 @@ function HeadcountDashboardPage({ rawMetricsData, loading, areaOptions, selected
               ))}
             </select>
           </label>
+          <div className="mt-2 ml-4 text-xs text-slate-500" title={AREA_MAP_TOOLTIP}>
+            Area labels are normalized for display (hover to see mappings).
+          </div>
+
           {datePickerOpen && (
             <div ref={datePickerRef} className="absolute left-0 z-20 mt-4 w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5">
               <div className="grid gap-4">
@@ -493,27 +497,82 @@ export default function App() {
   const firstComputeRef = useRef(true);
   const navigate = useNavigate();
 
-  // enforce area restriction for non-admin users and keep email for sidebar
+// enforce area restriction for non-admin users and keep email for sidebar
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setCurrentUserEmail(u?.email || '');
+
+      // Default: allow area changes (admin or not loaded yet)
+      if (!u) {
+        setAreaOptions(['All Areas']);
+        setSelectedArea('All Areas');
+        return;
+      }
+
+      // Lock area for non-admins (selectedArea must always match users/{uid}.area)
+      (async () => {
+        try {
+          const snap = await getDoc(doc(db, 'users', u.uid));
+          const data = snap.exists() ? snap.data() : null;
+
+          if (data?.role && data.role !== 'admin') {
+            const areaName = data?.area || null;
+            if (areaName) {
+              setAreaOptions([areaName]);
+              setSelectedArea(areaName);
+            } else {
+              // If employee has no area set yet, keep a safe state.
+              setAreaOptions(['All Areas']);
+              setSelectedArea('All Areas');
+            }
+          }
+        } catch (err) {
+          console.warn('failed to enforce area restriction:', err);
+        }
+      })();
+    });
+
+    return () => unsub();
+  }, []);
+
+// prevent non-admins from changing the area filter client-side
+  const [areaLock, setAreaLock] = useState(null);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
-      setCurrentUserEmail(u?.email || '');
-      if (!u) return;
+      if (!u) {
+        setAreaLock(null);
+        setAreaOptions(['All Areas']);
+        setSelectedArea('All Areas');
+        return;
+      }
       try {
         const snap = await getDoc(doc(db, 'users', u.uid));
         const data = snap.exists() ? snap.data() : null;
-        if (data?.role && data.role !== 'admin') {
-          const areaName = data?.area || null;
-          if (areaName) {
-            setAreaOptions([areaName]);
-            setSelectedArea(areaName);
-          }
+        if (data?.role && data.role !== 'admin' && data?.area) {
+          setAreaLock(data.area);
+          setSelectedArea(data.area);
+          setAreaOptions([data.area]);
+          return;
         }
+        setAreaLock(null);
       } catch (err) {
-        console.warn('failed to enforce area restriction:', err);
+        console.warn('failed to compute area lock:', err);
       }
     });
     return () => unsub();
   }, []);
+
+  const handleAreaChange = (next) => {
+    if (areaLock) {
+      // locked users can only view their DB area
+      if (next !== areaLock) setSelectedArea(areaLock);
+      return;
+    }
+    setSelectedArea(next);
+  };
+
+
 
   async function onSidebarLogout() {
     setSidebarLoggingOut(true);
@@ -540,18 +599,51 @@ export default function App() {
       const roster = parseCSV(rosterCsv);
       const leaves = parseCSV(leavesCsv);
 
+      // Compute available area options based on what actually exists in the extracted data.
       const scheduleAreaIdx = schedules[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
       if (scheduleAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Schedules.");
+
+      const rosterHeaders = roster[0].map(h => String(h || '').toLowerCase().trim());
+      const rosterLocationIdx = rosterHeaders.findIndex(h => h === 'work location name' || h === 'work location');
+
+      const leavesAreaIdx = leaves[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
+      if (leavesAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Leaves.");
+
       const scheduleAreas = Array.from(new Set(
         schedules.slice(1)
           .map(row => normalizeArea(String(row[scheduleAreaIdx] || '').trim()))
           .filter(Boolean)
-      )).sort((a, b) => a.localeCompare(b));
+      ))
+        .sort((a, b) => a.localeCompare(b));
+
+      const rosterAreas = rosterLocationIdx === -1 ? [] : Array.from(new Set(
+        roster.slice(1)
+          .map(row => normalizeArea(String(row[rosterLocationIdx] || '').trim()))
+          .filter(Boolean)
+      ))
+        .sort((a, b) => a.localeCompare(b));
+
+      const leaveAreas = Array.from(new Set(
+        leaves.slice(1)
+          .map(row => normalizeArea(String(row[leavesAreaIdx] || '').trim()))
+          .filter(Boolean)
+      ))
+        .sort((a, b) => a.localeCompare(b));
+
+      const availableAreasSet = new Set([...scheduleAreas, ...rosterAreas, ...leaveAreas]);
+      const availableAreas = Array.from(availableAreasSet).sort((a, b) => a.localeCompare(b));
 
       setScheduleRows(schedules);
       setRosterRows(roster);
       setLeaveRows(leaves);
-      setAreaOptions(['All Areas', ...scheduleAreas]);
+      setAreaOptions(['All Areas', ...availableAreas]);
+      // If currently selected area is no longer present (e.g., after re-computation), reset safely.
+      setSelectedArea((prev) => {
+        if (!prev) return 'All Areas';
+        if (prev === 'All Areas') return 'All Areas';
+        if (availableAreasSet.has(prev)) return prev;
+        return 'All Areas';
+      });
       setLoading(false);
     })
     .catch(err => {
@@ -728,7 +820,7 @@ export default function App() {
   const renderView = () => {
     switch (currentPage) {
       case 'headcount':
-        return <HeadcountDashboardPage rawMetricsData={metricsData} loading={loading} areaOptions={areaOptions} selectedArea={selectedArea} onAreaChange={setSelectedArea} />;
+        return <HeadcountDashboardPage rawMetricsData={metricsData} loading={loading} areaOptions={areaOptions} selectedArea={selectedArea} onAreaChange={handleAreaChange} />;
       case 'vehicles':
         return <VehiclesPage />;
       case 'settings':
@@ -754,11 +846,12 @@ export default function App() {
       {/* SIDEBAR COMPONENT */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
         <div className="p-5 rounded-b-3xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-950 border-b border-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 mb-2">AMW Analytical Dashboard</div>
           <div className="flex items-center gap-3">
             <Layers className="text-emerald-400" size={24} />
             <div>
-              <div className="text-lg font-semibold text-white">AMW DASHBOARD</div>
-              <div className="text-sm text-slate-400">Operational Insights</div>
+              <div className="text-lg font-semibold text-white">AMW Analytics</div>
+              <div className="text-sm text-slate-400">Operational insight hub</div>
             </div>
           </div>
         </div>
@@ -777,14 +870,14 @@ export default function App() {
             onClick={() => setCurrentPage('vehicles')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'vehicles' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
-            <Car size={18} /> Fleet Utilization
+            <Car size={18} /> Fleet Log (554899)
           </button>
 
           <button
             onClick={() => setCurrentPage('settings')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${currentPage === 'settings' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
-            <Settings size={18} /> Settings
+            <Settings size={18} /> Engine Rules Settings
           </button>
         </nav>
         <div className="mt-auto p-4 border-t border-slate-800">
