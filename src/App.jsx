@@ -16,7 +16,8 @@ import Sidebar from './components/Sidebar';
 import KPICards from './components/KPICards';
 import TrendChart from './components/TrendChart';
 import DateRangePicker from './components/DateRangePicker';
-import { designTokens } from './designTokens';
+// import { designTokens } from './designTokens';
+
 
 // --- CONFIGURATION & ENDPOINTS ---
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRexxgM8lPBkDswjt5dR1yFTr07PW_g8X1xew6IddOjj6LkXs6SRkZoh-c6jQjHNvfsMUeY-qMSdRxX/pub?output=csv';
@@ -354,9 +355,6 @@ function HeadcountDashboardPage({
             </label>
           )}
 
-          <div className="mt-2 ml-4 text-xs text-neutral.textMuted" title={AREA_MAP_TOOLTIP}>
-            Area labels are normalized for display (hover to see mappings).
-          </div>
         </div>
       </header>
 
@@ -793,7 +791,8 @@ export default function App() {
 
   if (error) {
     return (
-      <div className="h-screen bg-gray-50 flex flex-col items-center justify-center gap-3 p-4 text-center">
+      <div className="min-h-screen bg-neutral.background flex flex-col items-center justify-center gap-3 p-4 text-center">
+
         <AlertCircle size={44} className="text-rose-500" />
         <h2 className="text-xl font-bold text-slate-800">Pipeline Pipeline Extraction Breakdown</h2>
         <p className="text-slate-500 text-sm max-w-md">{error}</p>
@@ -802,7 +801,8 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 font-sans">
+    <div className="flex min-h-screen bg-neutral.background font-sans">
+
       
       {/* SIDEBAR COMPONENT */}
       <Sidebar

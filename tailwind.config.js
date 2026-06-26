@@ -64,6 +64,14 @@ export default {
           textPrimary: "#0F172A",
           textMuted: "#64748B",
         },
+
+        // Flattened keys so `bg-neutral.background`, `text-neutral.textPrimary`, etc work.
+        neutralBackground: "#F8FAFC",
+        neutralCard: "#FFFFFF",
+        neutralBorder: "#E2E8F0",
+        neutralTextPrimary: "#0F172A",
+        neutralTextMuted: "#64748B",
+
         accent: {
           highlight: "#F97316",
           highlightSoft: "#FFEDD5",
