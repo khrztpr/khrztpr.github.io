@@ -1,5 +1,13 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Calendar } from 'lucide-react';
+
+function getDaysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function startOfMonth(year, month) {
+  return new Date(year, month, 1).getDay();
+}
 
 export default function DateRangePicker({
   startDate,
@@ -7,102 +15,158 @@ export default function DateRangePicker({
   todayIso,
   datePickerOpen,
   setDatePickerOpen,
-  clampToMaxDate,
   setStartDate,
   setEndDate,
   datePickerRef,
   onDone
 }) {
+  const today = new Date();
+
+  const [viewDate, setViewDate] = useState(() => {
+    const d = new Date();
+    return { month: d.getMonth(), year: d.getFullYear() };
+  });
+
+  const calendarDays = useMemo(() => {
+    const days = getDaysInMonth(viewDate.year, viewDate.month);
+    const offset = startOfMonth(viewDate.year, viewDate.month);
+
+    const cells = [];
+
+    for (let i = 0; i < offset; i++) cells.push(null);
+    for (let d = 1; d <= days; d++) {
+      const iso = new Date(viewDate.year, viewDate.month, d)
+        .toISOString()
+        .split('T')[0];
+      cells.push(iso);
+    }
+
+    return cells;
+  }, [viewDate]);
+
+  const isInRange = (date) => {
+    if (!date) return false;
+    if (startDate && date === startDate) return true;
+    if (endDate && date === endDate) return true;
+    if (startDate && endDate && date > startDate && date < endDate) return true;
+    return false;
+  };
+
+  const handlePick = (date) => {
+    if (!startDate || (startDate && endDate)) {
+      setStartDate(date);
+      setEndDate('');
+      return;
+    }
+
+    if (date < startDate) {
+      setEndDate(startDate);
+      setStartDate(date);
+    } else {
+      setEndDate(date);
+    }
+  };
+
+  const prevMonth = () => {
+    setViewDate((v) => {
+      if (v.month === 0) return { month: 11, year: v.year - 1 };
+      return { month: v.month - 1, year: v.year };
+    });
+  };
+
+  const nextMonth = () => {
+    setViewDate((v) => {
+      if (v.month === 11) return { month: 0, year: v.year + 1 };
+      return { month: v.month + 1, year: v.year };
+    });
+  };
+
   return (
-    <div className="relative inline-block" ref={datePickerRef}>
+    <div className="relative inline-block">
+
+      {/* Trigger */}
       <button
         type="button"
-        onClick={() => setDatePickerOpen((open) => !open)}
-        className="inline-flex items-center gap-3 rounded-2xl border border-[#E2E8F0] bg-[#FFFFFF] px-5 py-3 text-[#0F172A] shadow-sm transition-all duration-200 hover:bg-[#D1FAF5] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#0F766E]/30"
+        onClick={() => setDatePickerOpen((o) => !o)}
+        className="inline-flex items-center gap-3 rounded-2xl border border-[#233663] bg-[#526084] px-5 py-3 text-[#FAF6F6] transition hover:bg-[#233663] focus:ring-2 focus:ring-[#CB1F23]/40"
       >
-        <Calendar size={18} className="text-[#0F766E]" />
+        <Calendar size={18} className="text-[#CB1F23]" />
+        <span className="text-sm font-medium">
+          Select date range
+        </span>
 
-        <div className="flex flex-col items-start leading-tight">
-          <span className="text-xs uppercase tracking-wider text-[#64748B]">
-            Date Range
+        {startDate && endDate && (
+          <span className="text-xs text-[#FAF6F6]/60">
+            {startDate} → {endDate}
           </span>
-
-          <span className="text-sm font-semibold">
-            {startDate && endDate
-              ? `${startDate} → ${endDate}`
-              : 'Select dates'}
-          </span>
-        </div>
+        )}
       </button>
 
+      {/* Calendar */}
       {datePickerOpen && (
-        <div className="absolute left-0 top-full z-50 mt-3 w-96 rounded-3xl border border-[#E2E8F0] bg-white p-6 shadow-2xl">
-          <div className="space-y-5">
-            <div>
-              <h3 className="text-lg font-semibold text-[#0F172A]">
-                Select Date Range
-              </h3>
-              <p className="mt-1 text-sm text-[#64748B]">
-                Dashboard metrics will update automatically.
-              </p>
+        <div
+          ref={datePickerRef}
+          className="absolute left-0 z-30 mt-3 w-[340px] rounded-3xl border border-[#233663] bg-[#526084] p-4 shadow-2xl text-[#FAF6F6]"
+        >
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={prevMonth}
+              className="px-3 py-1 rounded-xl hover:bg-[#233663]"
+            >
+              ←
+            </button>
+
+            <div className="text-sm font-semibold">
+              {new Date(viewDate.year, viewDate.month).toLocaleString(
+                'default',
+                { month: 'long', year: 'numeric' }
+              )}
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">
-                  From
-                </span>
-
-                <input
-                  type="date"
-                  value={startDate}
-                  max={todayIso}
-                  onChange={(e) => {
-                    const next = clampToMaxDate(e.target.value);
-                    setStartDate(next);
-                    if (!endDate) setEndDate(next);
-                  }}
-                  className="rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#0F172A] transition focus:border-[#0F766E] focus:outline-none focus:ring-2 focus:ring-[#0F766E]/20"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">
-                  To
-                </span>
-
-                <input
-                  type="date"
-                  value={endDate}
-                  max={todayIso}
-                  onChange={(e) => {
-                    const next = clampToMaxDate(e.target.value);
-                    setEndDate(next);
-                    if (!startDate) setStartDate(next);
-                  }}
-                  className="rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#0F172A] transition focus:border-[#0F766E] focus:outline-none focus:ring-2 focus:ring-[#0F766E]/20"
-                />
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setDatePickerOpen(false)}
-                className="rounded-xl border border-[#E2E8F0] bg-white px-5 py-2.5 text-sm font-medium text-[#64748B] transition hover:bg-[#F8FAFC]"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={onDone}
-                className="rounded-xl bg-[#0F766E] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0B5C55]"
-              >
-                Apply
-              </button>
-            </div>
+            <button
+              onClick={nextMonth}
+              className="px-3 py-1 rounded-xl hover:bg-[#233663]"
+            >
+              →
+            </button>
           </div>
+
+          {/* Weekdays */}
+          <div className="grid grid-cols-7 text-[10px] uppercase text-[#FAF6F6]/50 mb-2 text-center">
+            <div>Su</div><div>Mo</div><div>Tu</div><div>We</div>
+            <div>Th</div><div>Fr</div><div>Sa</div>
+          </div>
+
+          {/* Grid */}
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((date, i) => (
+              <button
+                key={i}
+                disabled={!date}
+                onClick={() => handlePick(date)}
+                className={`
+                  h-9 w-9 rounded-xl text-xs transition
+                  ${!date ? 'opacity-0' : ''}
+                  ${isInRange(date)
+                    ? 'bg-[#CB1F23] text-[#FAF6F6]'
+                    : 'hover:bg-[#233663]'}
+                `}
+              >
+                {date ? new Date(date).getDate() : ''}
+              </button>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <button
+            onClick={onDone}
+            className="mt-4 w-full rounded-2xl bg-[#CB1F23] py-2 text-sm font-semibold hover:bg-[#C65E50]"
+          >
+            Apply Range
+          </button>
+
         </div>
       )}
     </div>
