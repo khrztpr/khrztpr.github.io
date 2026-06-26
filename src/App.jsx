@@ -5,10 +5,6 @@ import { doc, getDoc } from 'firebase/firestore';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { LayoutDashboard, AlertCircle, Loader2 } from 'lucide-react';
 
-
-
-
-
 import { useNavigate } from 'react-router-dom';
 
 import { logout } from './auth/authService';
@@ -16,8 +12,6 @@ import Sidebar from './components/Sidebar';
 import KPICards from './components/KPICards';
 import TrendChart from './components/TrendChart';
 import DateRangePicker from './components/DateRangePicker';
-// import { designTokens } from './designTokens';
-
 
 // --- CONFIGURATION & ENDPOINTS ---
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRexxgM8lPBkDswjt5dR1yFTr07PW_g8X1xew6IddOjj6LkXs6SRkZoh-c6jQjHNvfsMUeY-qMSdRxX/pub?output=csv';
@@ -29,7 +23,6 @@ const GIDS = {
 };
 
 // Canonical area mapping: raw sheet codes -> normalized display name
-// (Values must only come from your canonical work location list)
 const AREA_MAP = {
   'SAC SOUTH': 'South Sacramento',
   'SACRAMENTO': 'South Sacramento',
@@ -53,10 +46,8 @@ const AREA_MAP = {
   'LLC (from sac south)': 'South Sacramento LLC'
 };
 
-// Tooltip-friendly mapping string for UI hints
 const AREA_MAP_TOOLTIP = Object.entries(AREA_MAP).map(([k, v]) => `${k} → ${v}`).join('; ');
 
-// Simple Levenshtein distance for fuzzy matching
 const levenshtein = (a, b) => {
   const al = a.length, bl = b.length;
   if (!al) return bl;
@@ -73,13 +64,11 @@ const levenshtein = (a, b) => {
   return dp[al][bl];
 };
 
-// Normalize area using canonical map; fall back to fuzzy match for small typos
 const normalizeArea = (raw) => {
   if (raw === undefined || raw === null) return '';
   const key = String(raw || '').trim();
   if (key === '') return '';
 
-  // simple memoization cache to avoid repeated expensive fuzzy computations
   if (!normalizeArea._cache) normalizeArea._cache = new Map();
   if (normalizeArea._cache.has(key)) return normalizeArea._cache.get(key);
 
@@ -89,7 +78,6 @@ const normalizeArea = (raw) => {
     return AREA_MAP[up];
   }
 
-  // try direct match to normalized values
   for (const v of Object.values(AREA_MAP)) {
     if (v.toUpperCase() === up) {
       normalizeArea._cache.set(key, v);
@@ -97,13 +85,12 @@ const normalizeArea = (raw) => {
     }
   }
 
-  // fuzzy match against AREA_MAP keys
   let best = { key: null, dist: Infinity };
   for (const candidate of Object.keys(AREA_MAP)) {
     const dist = levenshtein(up, candidate.toUpperCase());
     if (dist < best.dist) best = { key: candidate, dist };
   }
-  // allow small typos: threshold 2 or 20% of length
+
   if (best.key && (best.dist <= 2 || best.dist <= Math.floor(up.length * 0.2))) {
     const mapped = AREA_MAP[best.key];
     normalizeArea._cache.set(key, mapped);
@@ -114,7 +101,6 @@ const normalizeArea = (raw) => {
   return key;
 };
 
-// --- CORE UTILITY HELPER FUNCTIONS ---
 const parseCSV = (text) => {
   const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
   return lines.map(line => line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim()));
@@ -126,16 +112,12 @@ const parseDate = (value) => {
   let parsed;
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    // treat bare YYYY-MM-DD as local date (avoid implicit UTC parsing differences)
     const [y, m, d] = trimmed.split('-').map(Number);
     parsed = new Date(y, m - 1, d);
   } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
     const [a, b, c] = trimmed.split('/').map(Number);
-    if (a > 12) {
-      parsed = new Date(c, b - 1, a);
-    } else {
-      parsed = new Date(c, a - 1, b);
-    }
+    if (a > 12) parsed = new Date(c, b - 1, a);
+    else parsed = new Date(c, a - 1, b);
   } else {
     parsed = new Date(trimmed);
   }
@@ -156,9 +138,11 @@ const isSameDay = (value, target) => {
   const dateValue = parseDate(value);
   const dateTarget = parseDate(target);
   if (!dateValue || !dateTarget) return false;
-  return dateValue.getFullYear() === dateTarget.getFullYear()
-    && dateValue.getMonth() === dateTarget.getMonth()
-    && dateValue.getDate() === dateTarget.getDate();
+  return (
+    dateValue.getFullYear() === dateTarget.getFullYear() &&
+    dateValue.getMonth() === dateTarget.getMonth() &&
+    dateValue.getDate() === dateTarget.getDate()
+  );
 };
 
 const isOnOrBefore = (value, target) => {
@@ -167,20 +151,18 @@ const isOnOrBefore = (value, target) => {
   return dateValue && dateTarget ? dateValue <= dateTarget : false;
 };
 
-// Helper to check if a target date string falls inside a calendar range inclusively
 const isDateInRange = (dateStr, startStr, endStr) => {
   if (!dateStr) return false;
   const d = parseDate(dateStr);
   const start = startStr ? parseDate(startStr) : null;
   const end = endStr ? parseDate(endStr) : null;
-  
+
   if (!d) return false;
   if (start && d < start) return false;
   if (end && d > end) return false;
   return true;
 };
 
-// Helper to offset dates easily for range selection
 const offsetDateString = (baseDateStr, daysOffset) => {
   const base = parseDate(baseDateStr);
   if (!base) return baseDateStr;
@@ -189,9 +171,6 @@ const offsetDateString = (baseDateStr, daysOffset) => {
   return formatAsIsoDate(d);
 };
 
-// ==========================================
-// 1. PAGE MODULE: HEADCOUNT DASHBOARD
-// ==========================================
 function HeadcountDashboardPage({
   rawMetricsData,
   loading,
@@ -221,6 +200,7 @@ function HeadcountDashboardPage({
   const [loggingOut, setLoggingOut] = useState(false);
   const navigate = useNavigate();
   const todayIso = new Date().toISOString().split('T')[0];
+
   const clampToMaxDate = (value) => {
     if (!value) return '';
     return value > todayIso ? todayIso : value;
@@ -254,7 +234,6 @@ function HeadcountDashboardPage({
     navigate('/login', { replace: true });
   }
 
-  // Set initial default dates when raw data lands
   useEffect(() => {
     if (rawMetricsData && rawMetricsData.length > 0) {
       const latestAvailableDate = rawMetricsData[rawMetricsData.length - 1].name;
@@ -264,15 +243,12 @@ function HeadcountDashboardPage({
     }
   }, [rawMetricsData, todayIso]);
 
-  // Filter trend lines and compute absolute metrics relative to the current selected date range
   useEffect(() => {
     if (!rawMetricsData || rawMetricsData.length === 0 || !startDate || !endDate) return;
 
-    // Filter timeline objects within date bounds
     const filteredDays = rawMetricsData.filter(item => isDateInRange(item.name, startDate, endDate));
     setChartData(filteredDays);
 
-    // Compute range-aware Key Performance Indicators (KPIs)
     if (filteredDays.length === 0) {
       setKpis({ openingFieldHC: 0, active: 0, activeFull: 0, activePartial: 0, scheduled: 0, absentLate: 0, plannedLeave: 0, inShrinkage: 0, outShrinkage: 0 });
       return;
@@ -293,8 +269,7 @@ function HeadcountDashboardPage({
     });
 
     const count = filteredDays.length;
-    
-    // For counts we take the average across the range, for shrinkage we calculate across range totals
+
     setKpis({
       openingFieldHC: Math.round(totalOpening / count),
       active: Math.round(totalActive / count),
@@ -306,22 +281,21 @@ function HeadcountDashboardPage({
       inShrinkage: Math.round(totalInShrink / count),
       outShrinkage: totalScheduled > 0 ? Number(((totalAbsent + totalLeave) / totalScheduled * 100).toFixed(1)) : 0
     });
-
   }, [startDate, endDate, rawMetricsData]);
 
   return (
     <div className="space-y-6">
-      <header className="bg-neutral.card/95 p-7 rounded-[32px] shadow-sm border border-neutral.border/80 backdrop-blur-xl space-y-4">
+      <header className="bg-[#FFFFFF] p-7 rounded-[32px] shadow-sm border border-[#E2E8F0] space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-3">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-neutral.textPrimary">Operational Headcount Analytics</h1>
-              <p className="mt-2 text-sm leading-6 text-neutral.textMuted">Select a range and see the dashboard update instantly with KPIs and trends.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-[#0F172A]">Operational Headcount Analytics</h1>
+              <p className="mt-2 text-sm leading-6 text-[#64748B]">Select a range and see the dashboard update instantly with KPIs and trends.</p>
             </div>
           </div>
         </div>
 
-        <div className="relative pt-2 border-t border-neutral.border text-sm">
+        <div className="relative pt-2 border-t border-[#E2E8F0] text-sm">
           <DateRangePicker
             startDate={startDate}
             endDate={endDate}
@@ -336,17 +310,17 @@ function HeadcountDashboardPage({
           />
 
           {areaReadonly ? (
-            <div className="ml-4 inline-flex items-center gap-3 rounded-full border border-neutral.border bg-neutral.card px-4 py-3 text-sm">
-              <span className="text-xs font-semibold uppercase tracking-widest text-neutral.textMuted">Area</span>
-              <span className="rounded-2xl bg-neutral.card px-3 py-2 text-sm font-medium text-neutral.textPrimary">{areaReadOnlyLabel || selectedArea}</span>
+            <div className="ml-4 inline-flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#FFFFFF] px-4 py-3 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-[#64748B]">Area</span>
+              <span className="rounded-2xl bg-[#FFFFFF] px-3 py-2 text-sm font-medium text-[#0F172A]">{areaReadOnlyLabel || selectedArea}</span>
             </div>
           ) : (
-            <label className="ml-4 inline-flex items-center gap-3 rounded-full border border-neutral.border bg-neutral.card px-4 py-3 text-sm">
-              <span className="text-xs font-semibold uppercase tracking-widest text-neutral.textMuted">Area</span>
+            <label className="ml-4 inline-flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#FFFFFF] px-4 py-3 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-[#64748B]">Area</span>
               <select
                 value={selectedArea}
                 onChange={(e) => onAreaChange(e.target.value)}
-                className="rounded-2xl border border-neutral.border bg-neutral.card px-3 py-2 text-sm text-neutral.textPrimary outline-none transition focus:border-primary.base focus:ring-2 focus:ring-primary.base/30"
+                className="rounded-2xl border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2 text-sm text-[#0F172A] outline-none transition focus:border-[#0F766E] focus:ring-2 focus:ring-[#0F766E]/30"
               >
                 {areaOptions.map(area => (
                   <option key={area} value={area}>{area}</option>
@@ -355,56 +329,46 @@ function HeadcountDashboardPage({
             </label>
           )}
 
+          <div className="mt-2 ml-4 text-xs text-[#64748B]" title={AREA_MAP_TOOLTIP}>
+            Area labels are normalized for display (hover to see mappings).
+          </div>
         </div>
       </header>
 
       <KPICards kpis={kpis} />
-
       <TrendChart chartData={chartData} />
     </div>
   );
 }
 
-
-// ==========================================
-// 2. PAGE MODULE: VEHICLES
-// ==========================================
 function VehiclesPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-bold text-neutral.textPrimary">Vehicles & Fleet Management</h1>
-        <p className="text-neutral.textMuted text-sm mt-1">Isolating Fleet metrics hooked via GID 554899445.</p>
+        <h1 className="text-3xl font-bold text-[#0F172A]">Vehicles & Fleet Management</h1>
+        <p className="text-[#64748B] text-sm mt-1">Isolating Fleet metrics hooked via GID 554899445.</p>
       </header>
-      <div className="bg-neutral.card p-8 rounded-xl shadow-sm border border-neutral.border text-center text-neutral.textMuted text-sm">
+      <div className="bg-[#FFFFFF] p-8 rounded-xl shadow-sm border border-[#E2E8F0] text-center text-[#64748B] text-sm">
         Vehicle tracking module ready for metric array filters.
       </div>
     </div>
   );
 }
 
-// ==========================================
-// 3. PAGE MODULE: SETTINGS
-// ==========================================
 function SettingsPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-bold text-neutral.textPrimary">System Dashboard Settings</h1>
-        <p className="text-neutral.textMuted text-sm mt-1">Manage pipeline filters, thresholds, and refresh rates.</p>
+        <h1 className="text-3xl font-bold text-[#0F172A]">System Dashboard Settings</h1>
+        <p className="text-[#64748B] text-sm mt-1">Manage pipeline filters, thresholds, and refresh rates.</p>
       </header>
-      <div className="bg-neutral.card p-8 rounded-xl shadow-sm border border-neutral.border text-center text-neutral.textMuted text-sm">
+      <div className="bg-[#FFFFFF] p-8 rounded-xl shadow-sm border border-[#E2E8F0] text-center text-[#64748B] text-sm">
         Global application infrastructure adjustments workspace.
       </div>
     </div>
   );
 }
 
-
-
-// ==========================================
-// MAIN ROOT APP CONTAINER
-// ==========================================
 export default function App() {
   const [currentPage, setCurrentPage] = useState('headcount');
 
@@ -422,19 +386,16 @@ export default function App() {
   const firstComputeRef = useRef(true);
   const navigate = useNavigate();
 
-// enforce area restriction for non-admin users and keep email for sidebar
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setCurrentUserEmail(u?.email || '');
 
-      // Default: allow area changes (admin or not loaded yet)
       if (!u) {
         setAreaOptions(['All Areas']);
         setSelectedArea('All Areas');
         return;
       }
 
-      // Lock area for non-admins (selectedArea must always match users/{uid}.area)
       (async () => {
         try {
           const snap = await getDoc(doc(db, 'users', u.uid));
@@ -446,7 +407,6 @@ export default function App() {
               setAreaOptions([areaName]);
               setSelectedArea(areaName);
             } else {
-              // If employee has no area set yet, keep a safe state.
               setAreaOptions(['All Areas']);
               setSelectedArea('All Areas');
             }
@@ -460,7 +420,6 @@ export default function App() {
     return () => unsub();
   }, []);
 
-// prevent non-admins from changing the area filter client-side
   const [areaLock, setAreaLock] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -488,7 +447,6 @@ export default function App() {
           setSelectedArea(area);
         } else {
           setAreaLock(null);
-          // keep selectedArea as-is (it will be validated once availableAreas is computed)
         }
       } catch (err) {
         console.warn('failed to compute area lock:', err);
@@ -496,19 +454,17 @@ export default function App() {
         setIsAdmin(false);
       }
     });
+
     return () => unsub();
   }, []);
 
   const handleAreaChange = (next) => {
     if (!isAdmin && areaLock) {
-      // locked users can only view their DB area
       if (next !== areaLock) setSelectedArea(areaLock);
       return;
     }
     setSelectedArea(next);
   };
-
-
 
   async function onSidebarLogout() {
     setSidebarLoggingOut(true);
@@ -526,80 +482,72 @@ export default function App() {
     setError(null);
 
     Promise.all([
-      fetch(`${BASE_URL}&gid=${GIDS.Schedules}`).then(res => { if(!res.ok) throw new Error(); return res.text(); }),
-      fetch(`${BASE_URL}&gid=${GIDS.Roster}`).then(res => { if(!res.ok) throw new Error(); return res.text(); }),
-      fetch(`${BASE_URL}&gid=${GIDS.Leaves}`).then(res => { if(!res.ok) throw new Error(); return res.text(); })
+      fetch(`${BASE_URL}&gid=${GIDS.Schedules}`).then(res => { if (!res.ok) throw new Error(); return res.text(); }),
+      fetch(`${BASE_URL}&gid=${GIDS.Roster}`).then(res => { if (!res.ok) throw new Error(); return res.text(); }),
+      fetch(`${BASE_URL}&gid=${GIDS.Leaves}`).then(res => { if (!res.ok) throw new Error(); return res.text(); })
     ])
-    .then(([schedulesCsv, rosterCsv, leavesCsv]) => {
-      const schedules = parseCSV(schedulesCsv);
-      const roster = parseCSV(rosterCsv);
-      const leaves = parseCSV(leavesCsv);
+      .then(([schedulesCsv, rosterCsv, leavesCsv]) => {
+        const schedules = parseCSV(schedulesCsv);
+        const roster = parseCSV(rosterCsv);
+        const leaves = parseCSV(leavesCsv);
 
-      // Compute available area options based on what actually exists in the extracted data.
-      const scheduleAreaIdx = schedules[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
-      if (scheduleAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Schedules.");
+        const scheduleAreaIdx = schedules[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
+        if (scheduleAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Schedules.");
 
-      const rosterHeaders = roster[0].map(h => String(h || '').toLowerCase().trim());
-      const rosterLocationIdx = rosterHeaders.findIndex(h => h === 'work location name' || h === 'work location');
+        const rosterHeaders = roster[0].map(h => String(h || '').toLowerCase().trim());
+        const rosterLocationIdx = rosterHeaders.findIndex(h => h === 'work location name' || h === 'work location');
 
-      const leavesAreaIdx = leaves[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
-      if (leavesAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Leaves.");
+        const leavesAreaIdx = leaves[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
+        if (leavesAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Leaves.");
 
-      const scheduleAreas = Array.from(new Set(
-        schedules.slice(1)
-          .map(row => normalizeArea(String(row[scheduleAreaIdx] || '').trim()))
-          .filter(Boolean)
-      ))
-        .sort((a, b) => a.localeCompare(b));
+        const scheduleAreas = Array.from(new Set(
+          schedules.slice(1)
+            .map(row => normalizeArea(String(row[scheduleAreaIdx] || '').trim()))
+            .filter(Boolean)
+        )).sort((a, b) => a.localeCompare(b));
 
-      const rosterAreas = rosterLocationIdx === -1 ? [] : Array.from(new Set(
-        roster.slice(1)
-          .map(row => normalizeArea(String(row[rosterLocationIdx] || '').trim()))
-          .filter(Boolean)
-      ))
-        .sort((a, b) => a.localeCompare(b));
+        const rosterAreas = rosterLocationIdx === -1 ? [] : Array.from(new Set(
+          roster.slice(1)
+            .map(row => normalizeArea(String(row[rosterLocationIdx] || '').trim()))
+            .filter(Boolean)
+        )).sort((a, b) => a.localeCompare(b));
 
-      const leaveAreas = Array.from(new Set(
-        leaves.slice(1)
-          .map(row => normalizeArea(String(row[leavesAreaIdx] || '').trim()))
-          .filter(Boolean)
-      ))
-        .sort((a, b) => a.localeCompare(b));
+        const leaveAreas = Array.from(new Set(
+          leaves.slice(1)
+            .map(row => normalizeArea(String(row[leavesAreaIdx] || '').trim()))
+            .filter(Boolean)
+        )).sort((a, b) => a.localeCompare(b));
 
-      const availableAreasSet = new Set([...scheduleAreas, ...rosterAreas, ...leaveAreas]);
-      const availableAreas = Array.from(availableAreasSet).sort((a, b) => a.localeCompare(b));
+        const availableAreasSet = new Set([...scheduleAreas, ...rosterAreas, ...leaveAreas]);
+        const availableAreas = Array.from(availableAreasSet).sort((a, b) => a.localeCompare(b));
 
-      setScheduleRows(schedules);
-      setRosterRows(roster);
-      setLeaveRows(leaves);
+        setScheduleRows(schedules);
+        setRosterRows(roster);
+        setLeaveRows(leaves);
 
-      // Build dropdown options from available areas found in the extracted data.
-      // If user is locked to a specific area, override options/selection accordingly.
-      const areaOptionsNext = ['All Areas', ...availableAreas];
-      setAreaOptions((prevOptions) => {
-        if (areaLock && availableAreasSet.has(areaLock)) return [areaLock];
-        return areaOptionsNext;
+        const areaOptionsNext = ['All Areas', ...availableAreas];
+        setAreaOptions(() => {
+          if (areaLock && availableAreasSet.has(areaLock)) return [areaLock];
+          return areaOptionsNext;
+        });
+
+        setSelectedArea((prev) => {
+          if (areaLock) {
+            return availableAreasSet.has(areaLock) ? areaLock : 'All Areas';
+          }
+          if (!prev) return 'All Areas';
+          if (prev === 'All Areas') return 'All Areas';
+          if (availableAreasSet.has(prev)) return prev;
+          return 'All Areas';
+        });
+
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setError("Data pipeline extraction error. Verify sheet columns match expected headers.");
+        setLoading(false);
       });
-
-      setSelectedArea((prev) => {
-        // Locked users must always remain on their assigned area.
-        if (areaLock) {
-          return availableAreasSet.has(areaLock) ? areaLock : 'All Areas';
-        }
-
-        if (!prev) return 'All Areas';
-        if (prev === 'All Areas') return 'All Areas';
-        if (availableAreasSet.has(prev)) return prev;
-        return 'All Areas';
-      });
-
-      setLoading(false);
-    })
-    .catch(err => {
-      console.error(err);
-      setError("Data pipeline extraction error. Verify sheet columns match expected headers.");
-      setLoading(false);
-    });
   }, []);
 
   useEffect(() => {
@@ -624,6 +572,7 @@ export default function App() {
       const shiftLineIdx = schedHeaders['shift line'] ?? schedHeaders['role'];
       const scheduleAreaIdx = scheduleRows[0].findIndex(header => String(header || '').toLowerCase().trim() === 'area');
       if (scheduleAreaIdx === -1) throw new Error("Header labeled 'Area' was not identified inside Schedules.");
+
       const rosterDateIdx = rosterHeaders['start date as employee (non-contractor)'] ?? rosterHeaders['start date'] ?? rosterHeaders['date'];
       if (rosterDateIdx === undefined) throw new Error("Header labeled 'Start date as employee (non-contractor)' was not identified inside Roster.");
       const rosterEmploymentStatusIdx = rosterHeaders['employment status'];
@@ -632,7 +581,6 @@ export default function App() {
       if (rosterEmploymentStatusIdx === undefined) throw new Error("Header labeled 'Employment status' was not identified inside Roster.");
       if (rosterTypeIdx === undefined) throw new Error("Header labeled 'Type' was not identified inside Roster.");
 
-      // Preprocess roster and leaves to normalized, lightweight objects to speed up repeated filters
       const rosterProcessed = rosterRows.slice(1).map(row => {
         const locationRaw = rosterLocationIdx !== undefined ? String(row[rosterLocationIdx] || '').trim() : '';
         const location = normalizeArea(locationRaw);
@@ -652,7 +600,6 @@ export default function App() {
         return { dateIso, area, val };
       });
 
-      // Group schedule rows by ISO date to avoid repeated full-table scans per date
       const dateToScheduleRows = {};
       scheduleRows.slice(1).forEach(row => {
         const iso = formatAsIsoDate(row[dateIdx]);
@@ -669,38 +616,38 @@ export default function App() {
       });
 
       const computedTimeline = uniqueDates.map(targetDate => {
-          const schedForDate = dateToScheduleRows[targetDate] || [];
+        const schedForDate = dateToScheduleRows[targetDate] || [];
 
-          const openingFieldHC = schedForDate.filter(row => {
-            const shiftLine = String(row[shiftLineIdx] || '').trim().toLowerCase();
-            const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
-            const scheduleArea = normalizeArea(scheduleAreaRaw);
-            const comments = String(row[clockInCommentsIdx] || '').trim();
-            return isSameDay(row[dateIdx], targetDate) &&
-                   scheduleArea !== '' &&
-                   comments === '' &&
-                   shiftLine !== 'closer' &&
-                   (selectedArea === 'All Areas' || scheduleArea === selectedArea);
-          }).length;
+        const openingFieldHC = schedForDate.filter(row => {
+          const shiftLine = String(row[shiftLineIdx] || '').trim().toLowerCase();
+          const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
+          const scheduleArea = normalizeArea(scheduleAreaRaw);
+          const comments = String(row[clockInCommentsIdx] || '').trim();
+          return isSameDay(row[dateIdx], targetDate) &&
+            scheduleArea !== '' &&
+            comments === '' &&
+            shiftLine !== 'closer' &&
+            (selectedArea === 'All Areas' || scheduleArea === selectedArea);
+        }).length;
 
         const active = rosterProcessed.filter(r => {
           return r.employmentStatus === 'Active' &&
-                 isOnOrBefore(r.startIso, targetDate) &&
-                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
+            isOnOrBefore(r.startIso, targetDate) &&
+            (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
         }).length;
 
         const activeFull = rosterProcessed.filter(r => {
           return r.employmentStatus === 'Active' &&
-                 r.type === 'Full Time' &&
-                 isOnOrBefore(r.startIso, targetDate) &&
-                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
+            r.type === 'Full Time' &&
+            isOnOrBefore(r.startIso, targetDate) &&
+            (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
         }).length;
 
         const activePartial = rosterProcessed.filter(r => {
           return r.employmentStatus === 'Active' &&
-                 r.type === 'Part Time' &&
-                 isOnOrBefore(r.startIso, targetDate) &&
-                 (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
+            r.type === 'Part Time' &&
+            isOnOrBefore(r.startIso, targetDate) &&
+            (selectedArea === 'All Areas' || rosterLocationIdx === undefined || r.location === selectedArea);
         }).length;
 
         const scheduled = scheduleRows.slice(1).filter(row => {
@@ -708,9 +655,9 @@ export default function App() {
           const scheduleArea = normalizeArea(scheduleAreaRaw);
           const comments = String(row[clockInCommentsIdx] || '').trim();
           return isSameDay(row[dateIdx], targetDate) &&
-                 scheduleArea !== '' &&
-                 comments === '' &&
-                 (selectedArea === 'All Areas' || scheduleArea === selectedArea);
+            scheduleArea !== '' &&
+            comments === '' &&
+            (selectedArea === 'All Areas' || scheduleArea === selectedArea);
         }).length;
 
         const absentLate = scheduleRows.slice(1).filter(row => {
@@ -719,17 +666,17 @@ export default function App() {
           const scheduleAreaRaw = String(row[scheduleAreaIdx] || '').trim();
           const scheduleArea = normalizeArea(scheduleAreaRaw);
           return isSameDay(row[dateIdx], targetDate) &&
-                 scheduleArea !== '' &&
-                 (selectedArea === 'All Areas' || scheduleArea === selectedArea) &&
-                 (status.includes('absent') || status.includes('late'));
+            scheduleArea !== '' &&
+            (selectedArea === 'All Areas' || scheduleArea === selectedArea) &&
+            (status.includes('absent') || status.includes('late'));
         }).length;
 
         const plannedLeave = leaveProcessed.filter(l => {
           return l.dateIso === targetDate &&
-                 l.area !== '' &&
-                 l.val !== '0' &&
-                 l.val !== '' &&
-                 (selectedArea === 'All Areas' || l.area === selectedArea);
+            l.area !== '' &&
+            l.val !== '0' &&
+            l.val !== '' &&
+            (selectedArea === 'All Areas' || l.area === selectedArea);
         }).length;
 
         const inShrinkage = 0;
@@ -791,8 +738,7 @@ export default function App() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-neutral.background flex flex-col items-center justify-center gap-3 p-4 text-center">
-
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center gap-3 p-4 text-center">
         <AlertCircle size={44} className="text-rose-500" />
         <h2 className="text-xl font-bold text-slate-800">Pipeline Pipeline Extraction Breakdown</h2>
         <p className="text-slate-500 text-sm max-w-md">{error}</p>
@@ -801,10 +747,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-neutral.background font-sans">
-
-      
-      {/* SIDEBAR COMPONENT */}
+    <div className="flex min-h-screen bg-[#F8FAFC] font-sans">
       <Sidebar
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
@@ -813,8 +756,6 @@ export default function App() {
         onLogout={onSidebarLogout}
       />
 
-
-      {/* MAIN LAYOUT VIEWPORT */}
       <main className="relative flex-1 overflow-y-auto p-8">
         {loading && currentPage === 'headcount' ? (
           <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-400">
@@ -835,7 +776,7 @@ export default function App() {
           </div>
         )}
       </main>
-
     </div>
   );
 }
+
