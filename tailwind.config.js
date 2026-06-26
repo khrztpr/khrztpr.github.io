@@ -41,6 +41,24 @@ export default {
             textPrimary: "#0F172A",
           },
         },
+
+        // Backwards-compatible aliases so classnames like `text-status-success-base`
+        // and `bg-status-success-softBackground` resolve correctly regardless of nesting.
+        // (Some of the UI relook classes were written against a flatter expectation.)
+        statusAliases: {
+          successBase: "#16A34A",
+          successSoftBackground: "#DCFCE7",
+          successTextPrimary: "#065F46",
+          warningBase: "#D97706",
+          warningSoftBackground: "#FFEDD5",
+          warningTextPrimary: "#7C2D12",
+          errorBase: "#DC2626",
+          errorSoftBackground: "#FEE2E2",
+          errorTextPrimary: "#7F1D1D",
+          infoBase: "#3B82F6",
+          infoSoftBackground: "#DBEAFE",
+          infoTextPrimary: "#0F172A",
+        },
         neutral: {
           background: "#F8FAFC",
           card: "#FFFFFF",
