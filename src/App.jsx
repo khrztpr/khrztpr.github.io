@@ -3,7 +3,11 @@ import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { LayoutDashboard } from 'lucide-react';
+import { LayoutDashboard, AlertCircle, Loader2 } from 'lucide-react';
+
+
+
+
 
 import { useNavigate } from 'react-router-dom';
 
