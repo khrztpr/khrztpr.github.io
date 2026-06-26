@@ -27,13 +27,11 @@ export default function KPICards({ kpis }) {
           <div className="text-xl font-bold text-status-success-base mt-2">{kpis.scheduled}</div>
         </Card>
 
-
         <Card className="bg-neutral.card p-4 rounded-xl shadow-sm border border-neutral.border">
           <div className="text-neutral.textMuted text-[11px] font-bold uppercase tracking-wider flex items-center gap-1">
             <AlertTriangle size={13} className="text-status-error-base" /> Absent/Late
           </div>
           <div className="text-xl font-bold text-status-error-base mt-2">{kpis.absentLate}</div>
-
         </Card>
 
         <Card className="bg-neutral.card p-4 rounded-xl shadow-sm border border-neutral.border">
@@ -41,7 +39,6 @@ export default function KPICards({ kpis }) {
             <Calendar size={13} className="text-status-warning-base" /> Planned Leave
           </div>
           <div className="text-xl font-bold text-status-warning-base mt-2">{kpis.plannedLeave}</div>
-
         </Card>
 
         <Card className="bg-neutral.card p-4 rounded-xl shadow-sm border border-neutral.border col-span-2 md:col-span-1">
@@ -49,7 +46,6 @@ export default function KPICards({ kpis }) {
             <AlertTriangle size={13} className="text-status-error-base" /> Out Shrinkage
           </div>
           <div className="text-xl font-bold text-status-error-base mt-2">{kpis.outShrinkage}%</div>
-
         </Card>
       </div>
 
@@ -76,6 +72,7 @@ export default function KPICards({ kpis }) {
     </>
   );
 }
+
 
 
 

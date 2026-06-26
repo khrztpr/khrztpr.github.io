@@ -19,7 +19,10 @@ export default {
           chartsCyan: "#0EA5E9",
           chartsIndigo: "#4F46E5",
         },
+        // Status palette.
+        // Keep both nested and flattened keys so current JSX classes resolve.
         status: {
+
           success: {
             base: "#16A34A",
             softBackground: "#DCFCE7",
@@ -40,12 +43,7 @@ export default {
             softBackground: "#DBEAFE",
             textPrimary: "#0F172A",
           },
-        },
-
-        // Backwards-compatible aliases so classnames like `text-status-success-base`
-        // and `bg-status-success-softBackground` resolve correctly regardless of nesting.
-        // (Some of the UI relook classes were written against a flatter expectation.)
-        statusAliases: {
+          // Flattened keys so `text-status-success-base`, `bg-status-success-softBackground`, etc work.
           successBase: "#16A34A",
           successSoftBackground: "#DCFCE7",
           successTextPrimary: "#065F46",
@@ -59,6 +57,7 @@ export default {
           infoSoftBackground: "#DBEAFE",
           infoTextPrimary: "#0F172A",
         },
+
         neutral: {
           background: "#F8FAFC",
           card: "#FFFFFF",
