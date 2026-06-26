@@ -24,7 +24,9 @@ export default function Sidebar({
       </div>
 
       <nav className="flex-1 p-4 space-y-1.5">
-        <span className="text-[10px] font-bold text-neutral.textMuted uppercase tracking-widest block px-3 mb-2">Workspaces</span>
+        <span className="text-[10px] font-bold text-neutral.textMuted uppercase tracking-widest block px-3 mb-2">
+          Workspaces
+        </span>
 
         <button
           onClick={() => setCurrentPage('headcount')}
@@ -77,11 +79,11 @@ export default function Sidebar({
           <span>{sidebarLoggingOut ? 'Signing out…' : 'Logout'}</span>
         </button>
 
-        <div className="mt-4 text-[11px] text-neutral.textMuted text-center font-medium tracking-wider">v2.1.0 — 2026</div>
+        <div className="mt-4 text-[11px] text-neutral.textMuted text-center font-medium tracking-wider">
+          v2.1.0 — 2026
+        </div>
       </div>
     </aside>
   );
 }
-
-
 
